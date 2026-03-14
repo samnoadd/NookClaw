@@ -1,6 +1,6 @@
 # NookClaw
 
-NookClaw is a local-first personal AI assistant written in Go.
+NookClaw is a personal AI assistant written in Go.
 
 It can run as:
 
@@ -8,26 +8,23 @@ It can run as:
 - a gateway for chat and device integrations
 - a web launcher and management console
 
-NookClaw is designed to be usable on a single machine first, then extended only when you explicitly enable remote providers, channels, or web-facing features.
-
 ## Highlights
 
-- local-first defaults with `~/.nookclaw` and `NOOKCLAW_*`
-- default local model alias: `private-local -> ollama/qwen3.5:latest`
-- direct agent chat from the terminal with tools, memory, and skills
+- terminal-first agent workflow
+- pluggable model providers and model aliases
+- tools, memory, and installable skills
 - scheduled jobs with `cron`
-- optional web launcher for configuration, chat, logs, models, tools, and skills
-- optional channel gateways for Telegram, Discord, Slack, Matrix, LINE, OneBot, QQ, WeCom, DingTalk, WhatsApp, Pico, and MaixCam
-- migration support for older `*claw` installs
+- optional web UI for chat, configuration, logs, models, tools, and skills
+- optional channel integrations for Telegram, Discord, Slack, Matrix, LINE, OneBot, QQ, WeCom, DingTalk, WhatsApp, Pico, and MaixCam
 
 ## Project Status
 
-NookClaw is usable today, but it is still early-stage software. Treat it like an admin tool: run it on machines you trust, review the config you generate, and enable network integrations deliberately.
+NookClaw is usable today, but it is still early-stage software. Review the generated configuration, choose your model/provider setup intentionally, and enable external integrations deliberately.
 
 ## Requirements
 
 - Go `1.25.7+` to build from source
-- Ollama if you want the default local-first setup
+- at least one model backend you want to use
 - Node.js `20+` with `pnpm` only if you want to build the web frontend assets yourself
 
 ## Quick Start
@@ -48,17 +45,13 @@ Initialize a fresh workspace:
 ./build/nookclaw status
 ```
 
-If you want to use the default local model, make sure Ollama is running and the model exists:
+Then open your config, choose the model/provider you want to use, and run the agent:
 
 ```bash
-ollama serve
-ollama pull qwen3.5:latest
 ./build/nookclaw agent -m "hello"
 ```
 
-If you already use a different Ollama model, edit `~/.nookclaw/config.json` after onboarding and point `private-local` to the model you already have.
-
-For isolated testing without touching your normal home directory:
+For isolated testing:
 
 ```bash
 NOOKCLAW_HOME=/tmp/nookclaw-test ./build/nookclaw onboard
@@ -87,45 +80,31 @@ Build the launcher:
 make build-launcher
 ```
 
-Then start it:
+Start it:
 
 ```bash
 ./build/nookclaw-launcher
 ```
 
-By default the launcher binds to `127.0.0.1:18800`, opens a browser, and manages the NookClaw gateway for you.
+By default the launcher listens on `127.0.0.1:18800`, opens a browser, and manages the NookClaw gateway for you.
 
 If you want to work on the web UI itself, see [web/README.md](web/README.md).
 
-## Configuration And Data
+## Configuration
 
-Default locations:
+Default files:
 
 - config: `~/.nookclaw/config.json`
 - workspace: `~/.nookclaw/workspace`
 - auth store: `~/.nookclaw/auth.json`
 
-Primary environment variables:
+Main environment variables:
 
 - `NOOKCLAW_HOME`
 - `NOOKCLAW_CONFIG`
 - `NOOKCLAW_BUILTIN_SKILLS`
 - `NOOKCLAW_GATEWAY_HOST`
 - `NOOKCLAW_BINARY`
-
-NookClaw still detects legacy `.picoclaw` paths and `PICOCLAW_*` variables for compatibility during migration.
-
-## Privacy And Network Behavior
-
-Fresh installs are intentionally conservative:
-
-- no chat channels enabled by default
-- no heartbeat loop enabled by default
-- no remote skill registry enabled by default
-- no web search enabled by default
-- local Ollama is the default model path
-
-If you later enable remote providers, chat platforms, browser tools, or registries, your prompts and metadata will follow those integrations.
 
 ## Build And Test
 
@@ -146,7 +125,7 @@ make install
 
 ## Migration
 
-If you already have a legacy install, NookClaw can detect or import it.
+NookClaw includes migration commands for importing configuration and workspace data from earlier claw-based installs.
 
 Examples:
 
@@ -156,8 +135,6 @@ Examples:
 ./build/nookclaw migrate --dry-run
 ```
 
-Fresh installs use `~/.nookclaw`, but NookClaw can still read older `.picoclaw` layouts when needed.
+## License
 
-## Origins And License
-
-NookClaw is an MIT-licensed fork derived from PicoClaw. The current repo, packaging, branding, and local-first defaults are maintained here, while upstream attribution is preserved in [LICENSE](LICENSE).
+NookClaw is distributed under the MIT license. Upstream attribution is preserved in [LICENSE](LICENSE).
