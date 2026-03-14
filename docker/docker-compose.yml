@@ -1,0 +1,52 @@
+services:
+  # ─────────────────────────────────────────────
+  # NookClaw Agent (one-shot query)
+  #   docker compose -f docker/docker-compose.yml run --rm nookclaw-agent -m "Hello"
+  # ─────────────────────────────────────────────
+  nookclaw-agent:
+    image: ghcr.io/samnoadd/nookclaw:latest
+    container_name: nookclaw-agent
+    profiles:
+      - agent
+    # Uncomment to access host network; leave commented unless needed.
+    #extra_hosts:
+    #  - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/root/.nookclaw
+    entrypoint: ["nookclaw", "agent"]
+    stdin_open: true
+    tty: true
+
+  # ─────────────────────────────────────────────
+  # NookClaw Gateway (Long-running Bot)
+  #   docker compose -f docker/docker-compose.yml --profile gateway up
+  # ─────────────────────────────────────────────
+  nookclaw-gateway:
+    image: ghcr.io/samnoadd/nookclaw:latest
+    container_name: nookclaw-gateway
+    restart: on-failure
+    profiles:
+      - gateway
+    # Uncomment to access host network; leave commented unless needed.
+    #extra_hosts:
+    #  - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/root/.nookclaw
+
+  # ─────────────────────────────────────────────
+  # NookClaw Launcher (Web Console + Gateway)
+  #   docker compose -f docker/docker-compose.yml --profile launcher up
+  # ─────────────────────────────────────────────
+  nookclaw-launcher:
+    image: ghcr.io/samnoadd/nookclaw:launcher
+    container_name: nookclaw-launcher
+    restart: on-failure
+    profiles:
+      - launcher
+    environment:
+      - NOOKCLAW_GATEWAY_HOST=0.0.0.0
+    ports:
+      - "127.0.0.1:18800:18800"
+      - "127.0.0.1:18790:18790"
+    volumes:
+      - ./data:/root/.nookclaw

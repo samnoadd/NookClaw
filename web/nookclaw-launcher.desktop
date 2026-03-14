@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=NookClaw Launcher
+Comment=Web-based configuration and management UI for NookClaw
+Exec=nookclaw-launcher
+Icon=nookclaw-launcher
+Terminal=true
+Type=Application
+Categories=Utility;Network;
+Keywords=nookclaw;ai;agent;bot;
