@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/samnoadd/NookClaw/cmd/nookclaw/internal"
 	"github.com/samnoadd/NookClaw/pkg/config"
@@ -12,16 +13,19 @@ import (
 
 func onboard() {
 	configPath := internal.GetDefaultConfigPath()
+	updated := false
 
 	if _, err := os.Stat(configPath); err == nil {
-		fmt.Printf("Config already exists at %s\n", configPath)
-		fmt.Print("Overwrite? (y/n): ")
+		fmt.Printf("A NookClaw config already exists at %s\n", configPath)
+		fmt.Print("Replace it with a fresh onboarding setup? (y/N): ")
 		var response string
 		fmt.Scanln(&response)
-		if response != "y" {
+		if !strings.EqualFold(strings.TrimSpace(response), "y") &&
+			!strings.EqualFold(strings.TrimSpace(response), "yes") {
 			fmt.Println("Aborted.")
 			return
 		}
+		updated = true
 	}
 
 	cfg := config.DefaultConfig()
@@ -33,23 +37,119 @@ func onboard() {
 	workspace := cfg.WorkspacePath()
 	createWorkspaceTemplates(workspace)
 
-	fmt.Printf("%s NookClaw is ready!\n", internal.Logo)
-	fmt.Println("\nThis personal fork starts in local-first mode:")
-	fmt.Println("  - default model alias: private-local (Ollama)")
-	fmt.Println("  - heartbeat disabled")
-	fmt.Println("  - web search, web fetch, and remote skill registry disabled")
-	fmt.Println("  - remote command targets disabled")
-	fmt.Println("  - config and workspace default to ~/.nookclaw")
-	fmt.Println("  - existing ~/.picoclaw installs are still detected automatically")
-	fmt.Println("\nNext steps:")
-	fmt.Println("  1. Confirm the default Ollama model alias in", configPath)
-	fmt.Println("")
-	fmt.Println("     The fork uses model_name \"private-local\" by default.")
-	fmt.Println("     It points to ollama/qwen3.5:latest. Change it if your local model differs.")
-	fmt.Println("")
-	fmt.Println("  2. Chat locally: nookclaw agent -m \"Hello!\"")
-	fmt.Println("")
-	fmt.Println("  3. Enable any remote channel or provider only if you want it.")
+	fmt.Print(buildOnboardingMessage(cfg, configPath, updated))
+}
+
+func buildOnboardingMessage(cfg *config.Config, configPath string, updated bool) string {
+	title := "Setup Complete"
+	if updated {
+		title = "Setup Updated"
+	}
+
+	modelAlias := cfg.Agents.Defaults.GetModelName()
+	modelTarget := "(not set)"
+	if modelCfg, err := cfg.GetModelConfig(modelAlias); err == nil && modelCfg != nil && modelCfg.Model != "" {
+		modelTarget = modelCfg.Model
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s NookClaw %s\n\n", internal.Logo, title)
+
+	fmt.Fprintln(&b, "Created")
+	fmt.Fprintf(&b, "  Config:       %s\n", configPath)
+	fmt.Fprintf(&b, "  Workspace:    %s\n", cfg.WorkspacePath())
+	fmt.Fprintf(&b, "  Gateway:      %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
+
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Default Runtime")
+	fmt.Fprintf(&b, "  Model alias:  %s\n", valueOrFallback(modelAlias, "(not set)"))
+	fmt.Fprintf(&b, "  Model target: %s\n", modelTarget)
+	fmt.Fprintf(&b, "  Channels:     %s\n", enabledChannelsSummary(cfg))
+	fmt.Fprintf(&b, "  Web tools:    %s\n", statusLabel(cfg.Tools.Web.Enabled))
+	fmt.Fprintf(&b, "  Scheduler:    %s\n", statusLabel(cfg.Tools.Cron.Enabled))
+	fmt.Fprintf(&b, "  Heartbeat:    %s\n", statusLabel(cfg.Heartbeat.Enabled))
+	fmt.Fprintf(&b, "  Remote exec:  %s\n", statusLabel(cfg.Tools.Exec.AllowRemote))
+
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Recommended Next Steps")
+	fmt.Fprintln(&b, "  1. Review the generated setup")
+	fmt.Fprintln(&b, "     nookclaw status")
+	fmt.Fprintln(&b, "     nookclaw model")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "  2. Start a first chat")
+	fmt.Fprintln(&b, "     nookclaw agent -m \"hello\"")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "  3. Open the web launcher")
+	fmt.Fprintln(&b, "     make build-launcher && ./build/nookclaw-launcher")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "  4. Import an existing setup if needed")
+	fmt.Fprintln(&b, "     nookclaw migrate --from openclaw")
+
+	return b.String()
+}
+
+func enabledChannelsSummary(cfg *config.Config) string {
+	var enabled []string
+	if cfg.Channels.Telegram.Enabled {
+		enabled = append(enabled, "Telegram")
+	}
+	if cfg.Channels.Discord.Enabled {
+		enabled = append(enabled, "Discord")
+	}
+	if cfg.Channels.Slack.Enabled {
+		enabled = append(enabled, "Slack")
+	}
+	if cfg.Channels.Matrix.Enabled {
+		enabled = append(enabled, "Matrix")
+	}
+	if cfg.Channels.LINE.Enabled {
+		enabled = append(enabled, "LINE")
+	}
+	if cfg.Channels.OneBot.Enabled {
+		enabled = append(enabled, "OneBot")
+	}
+	if cfg.Channels.QQ.Enabled {
+		enabled = append(enabled, "QQ")
+	}
+	if cfg.Channels.WeCom.Enabled || cfg.Channels.WeComApp.Enabled || cfg.Channels.WeComAIBot.Enabled {
+		enabled = append(enabled, "WeCom")
+	}
+	if cfg.Channels.DingTalk.Enabled {
+		enabled = append(enabled, "DingTalk")
+	}
+	if cfg.Channels.WhatsApp.Enabled {
+		enabled = append(enabled, "WhatsApp")
+	}
+	if cfg.Channels.Pico.Enabled {
+		enabled = append(enabled, "Pico")
+	}
+	if cfg.Channels.MaixCam.Enabled {
+		enabled = append(enabled, "MaixCam")
+	}
+	if cfg.Channels.Feishu.Enabled {
+		enabled = append(enabled, "Feishu")
+	}
+	if cfg.Channels.IRC.Enabled {
+		enabled = append(enabled, "IRC")
+	}
+	if len(enabled) == 0 {
+		return "none enabled"
+	}
+	return strings.Join(enabled, ", ")
+}
+
+func statusLabel(enabled bool) string {
+	if enabled {
+		return "enabled"
+	}
+	return "disabled"
+}
+
+func valueOrFallback(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
 
 func createWorkspaceTemplates(workspace string) {
