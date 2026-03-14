@@ -7,6 +7,8 @@ import (
 )
 
 const layoutWidth = 62
+const selectorVisibleOptions = 7
+const selectorHeaderInnerWidth = 44
 
 const (
 	ansiReset   = "\033[0m"
@@ -108,7 +110,14 @@ func renderSelectorScreen(context []selectorLine, actionLabel string, options []
 	b.WriteString(stylePrimary(actionLabel))
 	b.WriteString("\n\n")
 
-	for index, option := range options {
+	start, end := selectorWindow(len(options), selected, selectorVisibleOptions)
+	if start > 0 {
+		b.WriteString(styleSecondary(fmt.Sprintf("  ↑ %d more", start)))
+		b.WriteString("\n")
+	}
+
+	for index := start; index < end; index++ {
+		option := options[index]
 		if index == selected {
 			b.WriteString(styleBrand("❯ "))
 		} else {
@@ -123,10 +132,16 @@ func renderSelectorScreen(context []selectorLine, actionLabel string, options []
 		b.WriteString("\n")
 
 		if strings.TrimSpace(option.Description) != "" {
-			b.WriteString("  ")
-			b.WriteString(styleSecondary(option.Description))
-			b.WriteString("\n")
+			for _, line := range wrapIndentedText(option.Description, layoutWidth, "  ", "  ") {
+				b.WriteString(styleSecondary(line))
+				b.WriteString("\n")
+			}
 		}
+	}
+
+	if end < len(options) {
+		b.WriteString(styleSecondary(fmt.Sprintf("  ↓ %d more", len(options)-end)))
+		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
@@ -135,11 +150,70 @@ func renderSelectorScreen(context []selectorLine, actionLabel string, options []
 	return b.String()
 }
 
+func renderGuideScreen(title string, lines []string) string {
+	var b strings.Builder
+	b.WriteString(renderSelectorHeader())
+	b.WriteString("\n\n")
+	b.WriteString(styleTitle(title))
+	b.WriteString("\n\n")
+
+	for _, raw := range lines {
+		if strings.TrimSpace(raw) == "" {
+			b.WriteString("\n")
+			continue
+		}
+		for _, line := range wrapText(raw, layoutWidth) {
+			b.WriteString(styleSecondary(line))
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("\n")
+	return b.String()
+}
+
 func renderSelectorHeader() string {
-	top := styleBorder("╭──────────────────────────────╮")
-	middle := styleBorder("│ ") + styleBrand("🐾") + "  " + styleBrand("NookClaw") + styleBorder("                 │")
-	bottom := styleBorder("╰──────────────────────────────╯")
-	return fmt.Sprintf("%s\n%s\n%s", top, middle, bottom)
+	rows := []struct {
+		Text   string
+		Styler func(string) string
+	}{
+		{Text: "", Styler: nil},
+		{Text: "N O O K C L A W", Styler: styleHero},
+		{Text: "private, local-first assistant", Styler: styleSecondary},
+		{Text: "", Styler: nil},
+	}
+
+	var b strings.Builder
+	border := strings.Repeat("─", selectorHeaderInnerWidth+2)
+	b.WriteString(styleBorder("╭" + border + "╮"))
+	b.WriteString("\n")
+	for index, row := range rows {
+		b.WriteString(renderHeaderRow(row.Text, row.Styler))
+		if index < len(rows)-1 {
+			b.WriteString("\n")
+		}
+	}
+	b.WriteString("\n")
+	b.WriteString(styleBorder("╰" + border + "╯"))
+	return b.String()
+}
+
+func renderHeaderRow(text string, styler func(string) string) string {
+	content := centerText(text, selectorHeaderInnerWidth)
+	if styler != nil && strings.TrimSpace(text) != "" {
+		content = styler(content)
+	}
+	return styleBorder("│ ") + content + styleBorder(" │")
+}
+
+func centerText(text string, width int) string {
+	runeCount := len([]rune(text))
+	if runeCount >= width {
+		return text
+	}
+	leftPadding := (width - runeCount) / 2
+	rightPadding := width - runeCount - leftPadding
+	return strings.Repeat(" ", leftPadding) + text + strings.Repeat(" ", rightPadding)
 }
 
 func wrapText(text string, width int) []string {
@@ -190,12 +264,35 @@ func wrapIndentedText(text string, width int, firstIndent string, nextIndent str
 	return lines
 }
 
+func selectorWindow(total int, selected int, visible int) (int, int) {
+	if total <= visible {
+		return 0, total
+	}
+
+	start := selected - visible/2
+	if start < 0 {
+		start = 0
+	}
+
+	end := start + visible
+	if end > total {
+		end = total
+		start = end - visible
+	}
+
+	return start, end
+}
+
 func styleBrand(value string) string {
 	return applyStyle(value, ansiBrand)
 }
 
 func styleTitle(value string) string {
 	return applyStyle(value, ansiBold+ansiPrimary)
+}
+
+func styleHero(value string) string {
+	return applyStyle(value, ansiBold+ansiBrand)
 }
 
 func stylePrimary(value string) string {

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/samnoadd/NookClaw/pkg/config"
@@ -62,6 +64,18 @@ type channelPreset struct {
 	ID          string
 	Label       string
 	Description string
+	Guidance    []string
+}
+
+type modelChoice struct {
+	Key         string
+	Label       string
+	Description string
+	Alias       string
+	Provider    string
+	Target      string
+	KeyLabel    string
+	NeedsAPIKey bool
 }
 
 type setupWizard struct {
@@ -107,24 +121,106 @@ var channelPresets = []channelPreset{
 	{
 		ID:          "telegram",
 		Label:       "Telegram",
-		Description: "Prompt for a bot token and enable the Telegram channel.",
+		Description: "Bot token via @BotFather.",
+		Guidance: []string{
+			"Open Telegram and message @BotFather.",
+			"Run /newbot, follow the prompts, then copy the bot token it returns.",
+			"Paste the token below. After onboarding, lock the bot down with allowlists in config.json if needed.",
+		},
 	},
 	{
 		ID:          "discord",
 		Label:       "Discord",
-		Description: "Prompt for a bot token and enable the Discord channel.",
+		Description: "Bot token from the Discord developer portal.",
+		Guidance: []string{
+			"Create an application in the Discord Developer Portal, then add a Bot user.",
+			"Copy the bot token and enable the Message Content intent if you expect normal chat input.",
+			"Paste the token below. Invite the bot to your server after onboarding.",
+		},
 	},
 	{
 		ID:          "matrix",
 		Label:       "Matrix",
-		Description: "Prompt for homeserver, user ID, and access token.",
+		Description: "Homeserver, user ID, and access token.",
+		Guidance: []string{
+			"Choose the homeserver your bot account lives on, such as https://matrix.org.",
+			"Create or log in with the bot account, then generate an access token for it.",
+			"Paste the homeserver, user ID, and access token below.",
+		},
 	},
 	{
 		ID:          "slack",
 		Label:       "Slack",
-		Description: "Prompt for a bot token and app token.",
+		Description: "Bot token and Socket Mode app token.",
+		Guidance: []string{
+			"Create a Slack app, enable Socket Mode, and install it into your workspace.",
+			"Collect the Bot User OAuth token (starts with xoxb-) and the App-Level token (starts with xapp-).",
+			"Paste both values below.",
+		},
+	},
+	{
+		ID:          "line",
+		Label:       "LINE",
+		Description: "Channel secret and Messaging API access token.",
+		Guidance: []string{
+			"Create a Messaging API channel in the LINE Developers Console.",
+			"Copy the channel secret and generate a long-lived channel access token.",
+			"Paste both values below.",
+		},
+	},
+	{
+		ID:          "irc",
+		Label:       "IRC",
+		Description: "Server, nickname, and channels to join.",
+		Guidance: []string{
+			"Pick the IRC network and server address, for example irc.libera.chat:6697.",
+			"Choose the bot nickname and the channels it should join, separated by commas.",
+			"If the network supports TLS, enable it during the next step.",
+		},
+	},
+	{
+		ID:          "onebot",
+		Label:       "OneBot",
+		Description: "WebSocket URL and optional access token.",
+		Guidance: []string{
+			"Point NookClaw at the WebSocket endpoint exposed by your OneBot bridge.",
+			"Use the access token if your bridge requires one.",
+			"Paste the WebSocket URL and token below.",
+		},
+	},
+	{
+		ID:          "qq",
+		Label:       "QQ",
+		Description: "App ID and app secret.",
+		Guidance: []string{
+			"Create a QQ bot application and copy the App ID and App Secret.",
+			"Paste both values below.",
+			"After onboarding, verify allowlists and message limits in the config if needed.",
+		},
+	},
+	{
+		ID:          "dingtalk",
+		Label:       "DingTalk",
+		Description: "Client ID and client secret.",
+		Guidance: []string{
+			"Create a DingTalk application and collect the Client ID and Client Secret.",
+			"Paste both values below.",
+			"Review callback and allowlist settings after onboarding if you plan to expose it widely.",
+		},
+	},
+	{
+		ID:          "feishu",
+		Label:       "Feishu",
+		Description: "App ID, app secret, verification token, and encrypt key.",
+		Guidance: []string{
+			"Create a Feishu app and collect the App ID and App Secret.",
+			"Enable the event callback and copy the verification token and encrypt key.",
+			"Paste all four values below.",
+		},
 	},
 }
+
+var discoverOllamaModelsFn = discoverOllamaModels
 
 func newSetupWizard(in io.Reader, out io.Writer, interactive bool, opts onboardOptions) *setupWizard {
 	if in == nil {
@@ -198,6 +294,12 @@ func validateOnboardOptions(opts onboardOptions) error {
 			if strings.TrimSpace(opts.ChannelSecret) == "" || strings.TrimSpace(opts.ChannelUserID) == "" {
 				return fmt.Errorf("--channel matrix requires --channel-secret and --channel-user-id in non-interactive mode")
 			}
+		case "line", "qq", "dingtalk", "feishu":
+			if strings.TrimSpace(opts.ChannelSecret) == "" {
+				return fmt.Errorf("--channel %s requires --channel-secret in non-interactive mode", channel)
+			}
+		case "onebot", "irc":
+			// Optional non-interactive support is currently config-driven for these channels.
 		}
 	}
 
@@ -313,20 +415,20 @@ func (w *setupWizard) run(cfg *config.Config) (onboardingState, error) {
 		mode := w.promptChoiceWithContext(
 			[]selectorLine{
 				{Text: "Setup mode", Role: "primary"},
-				{Text: "Choose the fastest way to start.", Role: "secondary"},
-				{Text: "Advanced exposes provider, channel, launcher, and background settings now.", Role: "secondary"},
+				{Text: "Choose how much you want to configure in this pass.", Role: "secondary"},
+				{Text: "Both paths let you pick a model. Advanced also exposes automation and launcher policy now.", Role: "secondary"},
 			},
 			"Choose a setup profile:",
 			[]wizardOption{
 				{
 					Key:         "quick",
 					Label:       quickStartMode,
-					Description: "Use the default runtime, starter workspace, and launcher settings.",
+					Description: "Pick a model, keep the rest minimal, and get to a first chat quickly.",
 				},
 				{
 					Key:         "advanced",
 					Label:       advancedMode,
-					Description: "Choose the model backend, credentials, background features, and launcher visibility.",
+					Description: "Pick a model, credentials, channels, background features, and launcher access in one pass.",
 				},
 			},
 			"quick",
@@ -345,15 +447,16 @@ func (w *setupWizard) run(cfg *config.Config) (onboardingState, error) {
 		fmt.Fprintln(w.out)
 	}
 
+	w.printSection(
+		"Model selection",
+		"Choose the model NookClaw should use by default. Quick Start still needs a real model choice.",
+	)
+	if err := w.configureModel(cfg); err != nil {
+		return onboardingState{}, err
+	}
+	fmt.Fprintln(w.out)
+
 	if state.SetupMode == advancedMode {
-		w.printSection(
-			"Runtime profile",
-			"Choose the default model backend and add credentials now if you want this setup ready for an immediate first chat.",
-		)
-		if err := w.configureProvider(cfg); err != nil {
-			return onboardingState{}, err
-		}
-		fmt.Fprintln(w.out)
 		w.printSection(
 			"Background features",
 			"Enable only the automation and reachability features you plan to use on day one.",
@@ -363,17 +466,11 @@ func (w *setupWizard) run(cfg *config.Config) (onboardingState, error) {
 		cfg.Heartbeat.Enabled = w.promptYesNo("Enable heartbeat background checks?", cfg.Heartbeat.Enabled)
 		cfg.Tools.Exec.AllowRemote = w.promptYesNo("Allow remote exec requests?", cfg.Tools.Exec.AllowRemote)
 		fmt.Fprintln(w.out)
-	} else if !w.selectorUIEnabled() {
-		fmt.Fprint(w.out, renderCallout("Quick Start profile", []string{
-			"Quick Start keeps the default model, starter workspace, and conservative background settings.",
-			"You can re-run `nookclaw onboard --advanced --force` later if you want a fuller configuration pass.",
-		}))
-		fmt.Fprintln(w.out)
 	}
 
 	w.printSection(
 		"Channel access",
-		"Attach one inbound channel now if you want the assistant reachable outside the terminal. Leave it empty if you prefer to finish setup first.",
+		"Pick one inbound channel to wire up now, or skip it and finish the rest of onboarding first.",
 	)
 	channelLabel, err := w.configureChannel(cfg)
 	if err != nil {
@@ -413,62 +510,60 @@ func (w *setupWizard) applyFlagSelections(cfg *config.Config, state *onboardingS
 	return nil
 }
 
-func (w *setupWizard) configureProvider(cfg *config.Config) error {
-	providerID := normalizeProvider(w.opts.Provider)
-	if providerID == "" {
-		options := make([]wizardOption, 0, len(providerPresets))
-		for index, preset := range providerPresets {
-			options = append(options, wizardOption{
-				Key:         fmt.Sprintf("%d", index+1),
-				Label:       preset.Label,
-				Description: preset.Description,
-			})
-		}
-		choice := w.promptChoiceWithContext(
-			[]selectorLine{
-				{Text: "Runtime profile", Role: "primary"},
-				{Text: "Choose the default model backend for this setup.", Role: "secondary"},
-			},
-			"Select a provider:",
-			options,
-			"1",
-		)
-		preset := providerPresets[0]
-		switch choice {
-		case "2":
-			preset = providerPresets[1]
-		case "3":
-			preset = providerPresets[2]
-		case "4":
-			preset = providerPresets[3]
-		}
-		applyProviderPreset(cfg, preset)
-		if requiresProviderKey(preset.ID) {
-			key := strings.TrimSpace(w.opts.APIKey)
-			if key == "" && w.promptYesNo(fmt.Sprintf("Add your %s now?", preset.KeyName), false) {
-				key = w.promptSecret(preset.KeyName)
-			}
-			if key != "" {
-				setProviderAPIKey(cfg, preset.ID, key)
-			}
-		}
-		return nil
+func (w *setupWizard) configureModel(cfg *config.Config) error {
+	choices, defaultKey := buildModelChoices(cfg)
+	if len(choices) == 0 {
+		return fmt.Errorf("no selectable models found in config or local Ollama")
 	}
 
-	preset, ok := providerPresetByID(providerID)
-	if !ok {
-		return fmt.Errorf("unsupported provider %q", providerID)
+	options := make([]wizardOption, 0, len(choices))
+	for _, choice := range choices {
+		options = append(options, wizardOption{
+			Key:         choice.Key,
+			Label:       choice.Label,
+			Description: choice.Description,
+		})
 	}
-	applyProviderPreset(cfg, preset)
-	if requiresProviderKey(preset.ID) {
+
+	selected := w.promptChoiceWithContext(
+		[]selectorLine{
+			{Text: "Model selection", Role: "primary"},
+			{Text: "Installed Ollama models are listed first when available. Configured cloud aliases follow.", Role: "secondary"},
+			{Text: "Pick the model NookClaw should use by default after onboarding.", Role: "secondary"},
+		},
+		"Select a model:",
+		options,
+		defaultKey,
+	)
+
+	choice, ok := modelChoiceByKey(choices, selected)
+	if !ok {
+		return fmt.Errorf("unknown model selection %q", selected)
+	}
+
+	if err := applyModelChoice(cfg, choice); err != nil {
+		return err
+	}
+
+	if choice.NeedsAPIKey {
 		key := strings.TrimSpace(w.opts.APIKey)
-		if key == "" && w.promptYesNo(fmt.Sprintf("Add your %s now?", preset.KeyName), false) {
-			key = w.promptSecret(preset.KeyName)
+		if key == "" {
+			if providerHasAPIKey(cfg) {
+				return nil
+			}
+			w.showGuidance(choice.Label+" setup", []string{
+				fmt.Sprintf("%s uses %s.", choice.Label, choice.Target),
+				fmt.Sprintf("Paste your %s now, or leave it for later and edit config.json before the first real chat.", choice.KeyLabel),
+			})
+			if w.promptYesNo(fmt.Sprintf("Add your %s now?", choice.KeyLabel), false) {
+				key = w.promptSecret(choice.KeyLabel)
+			}
 		}
 		if key != "" {
-			setProviderAPIKey(cfg, preset.ID, key)
+			setProviderAPIKey(cfg, choice.Provider, key)
 		}
 	}
+
 	return nil
 }
 
@@ -491,50 +586,34 @@ func (w *setupWizard) configureProviderFromFlags(cfg *config.Config) error {
 func (w *setupWizard) configureChannel(cfg *config.Config) (string, error) {
 	channelID := normalizeChannel(w.opts.Channel)
 	if channelID == "" {
-		if !w.promptYesNo("Configure a chat channel now?", false) {
-			return "none", nil
-		}
 		options := []wizardOption{
 			{
-				Key:         "1",
-				Label:       channelPresets[0].Label,
-				Description: channelPresets[0].Description,
+				Key:         "skip",
+				Label:       "Skip for now",
+				Description: "Finish onboarding first and add a channel later from the config or launcher.",
 			},
-			{
-				Key:         "2",
-				Label:       channelPresets[1].Label,
-				Description: channelPresets[1].Description,
-			},
-			{
-				Key:         "3",
-				Label:       channelPresets[2].Label,
-				Description: channelPresets[2].Description,
-			},
-			{
-				Key:         "4",
-				Label:       channelPresets[3].Label,
-				Description: channelPresets[3].Description,
-			},
+		}
+		for _, preset := range channelPresets {
+			options = append(options, wizardOption{
+				Key:         preset.ID,
+				Label:       preset.Label,
+				Description: preset.Description,
+			})
 		}
 		choice := w.promptChoiceWithContext(
 			[]selectorLine{
 				{Text: "Channel access", Role: "primary"},
-				{Text: "Attach one inbound channel now, or skip it and finish setup first.", Role: "secondary"},
+				{Text: "Choose one channel to wire up now, or skip it and finish setup first.", Role: "secondary"},
+				{Text: "More complex integrations can still be tuned in config.json after onboarding.", Role: "secondary"},
 			},
 			"Select a channel:",
 			options,
-			"1",
+			"skip",
 		)
-		switch choice {
-		case "2":
-			channelID = channelPresets[1].ID
-		case "3":
-			channelID = channelPresets[2].ID
-		case "4":
-			channelID = channelPresets[3].ID
-		default:
-			channelID = channelPresets[0].ID
+		if choice == "skip" {
+			return "none", nil
 		}
+		channelID = choice
 	}
 
 	label, err := w.configureSelectedChannel(cfg, channelID)
@@ -553,6 +632,10 @@ func (w *setupWizard) configureChannelFromFlags(cfg *config.Config) (string, err
 }
 
 func (w *setupWizard) configureSelectedChannel(cfg *config.Config, channelID string) (string, error) {
+	if preset, ok := channelPresetByID(channelID); ok {
+		w.showGuidance(preset.Label+" setup", preset.Guidance)
+	}
+
 	switch channelID {
 	case "telegram":
 		token := strings.TrimSpace(w.opts.ChannelSecret)
@@ -616,6 +699,92 @@ func (w *setupWizard) configureSelectedChannel(cfg *config.Config, channelID str
 		cfg.Channels.Slack.BotToken = botToken
 		cfg.Channels.Slack.AppToken = appToken
 		return "Slack", nil
+	case "line":
+		secret := strings.TrimSpace(w.opts.ChannelSecret)
+		if secret == "" {
+			secret = w.promptSecret("LINE channel secret")
+		}
+		accessToken := strings.TrimSpace(w.opts.ChannelAppToken)
+		if accessToken == "" {
+			accessToken = w.promptSecret("LINE channel access token")
+		}
+		if strings.TrimSpace(secret) == "" || strings.TrimSpace(accessToken) == "" {
+			return "", fmt.Errorf("line channel requires a channel secret and access token")
+		}
+		cfg.Channels.LINE.Enabled = true
+		cfg.Channels.LINE.ChannelSecret = secret
+		cfg.Channels.LINE.ChannelAccessToken = accessToken
+		return "LINE", nil
+	case "irc":
+		server := w.promptText("IRC server", cfg.Channels.IRC.Server)
+		tlsEnabled := w.promptYesNo("Use TLS for IRC?", cfg.Channels.IRC.TLS)
+		nick := w.promptText("IRC nickname", cfg.Channels.IRC.Nick)
+		channels := parseCommaSeparatedList(w.promptText("IRC channels (comma separated)", strings.Join(cfg.Channels.IRC.Channels, ",")))
+		if strings.TrimSpace(server) == "" || strings.TrimSpace(nick) == "" || len(channels) == 0 {
+			return "", fmt.Errorf("irc channel requires a server, nickname, and at least one channel")
+		}
+		cfg.Channels.IRC.Enabled = true
+		cfg.Channels.IRC.Server = server
+		cfg.Channels.IRC.TLS = tlsEnabled
+		cfg.Channels.IRC.Nick = nick
+		cfg.Channels.IRC.Channels = config.FlexibleStringSlice(channels)
+		return "IRC", nil
+	case "onebot":
+		wsURL := w.promptText("OneBot WebSocket URL", cfg.Channels.OneBot.WSUrl)
+		token := strings.TrimSpace(w.opts.ChannelSecret)
+		if token == "" {
+			token = w.promptText("OneBot access token (optional)", cfg.Channels.OneBot.AccessToken)
+		}
+		if strings.TrimSpace(wsURL) == "" {
+			return "", fmt.Errorf("onebot channel requires a WebSocket URL")
+		}
+		cfg.Channels.OneBot.Enabled = true
+		cfg.Channels.OneBot.WSUrl = wsURL
+		cfg.Channels.OneBot.AccessToken = token
+		return "OneBot", nil
+	case "qq":
+		appID := w.promptText("QQ app ID", cfg.Channels.QQ.AppID)
+		appSecret := strings.TrimSpace(w.opts.ChannelSecret)
+		if appSecret == "" {
+			appSecret = w.promptSecret("QQ app secret")
+		}
+		if strings.TrimSpace(appID) == "" || strings.TrimSpace(appSecret) == "" {
+			return "", fmt.Errorf("qq channel requires an app ID and app secret")
+		}
+		cfg.Channels.QQ.Enabled = true
+		cfg.Channels.QQ.AppID = appID
+		cfg.Channels.QQ.AppSecret = appSecret
+		return "QQ", nil
+	case "dingtalk":
+		clientID := w.promptText("DingTalk client ID", cfg.Channels.DingTalk.ClientID)
+		clientSecret := strings.TrimSpace(w.opts.ChannelSecret)
+		if clientSecret == "" {
+			clientSecret = w.promptSecret("DingTalk client secret")
+		}
+		if strings.TrimSpace(clientID) == "" || strings.TrimSpace(clientSecret) == "" {
+			return "", fmt.Errorf("dingtalk channel requires a client ID and client secret")
+		}
+		cfg.Channels.DingTalk.Enabled = true
+		cfg.Channels.DingTalk.ClientID = clientID
+		cfg.Channels.DingTalk.ClientSecret = clientSecret
+		return "DingTalk", nil
+	case "feishu":
+		appID := w.promptText("Feishu app ID", cfg.Channels.Feishu.AppID)
+		appSecret := strings.TrimSpace(w.opts.ChannelSecret)
+		if appSecret == "" {
+			appSecret = w.promptSecret("Feishu app secret")
+		}
+		verificationToken := w.promptText("Feishu verification token", cfg.Channels.Feishu.VerificationToken)
+		encryptKey := w.promptText("Feishu encrypt key", cfg.Channels.Feishu.EncryptKey)
+		if strings.TrimSpace(appID) == "" || strings.TrimSpace(appSecret) == "" || strings.TrimSpace(verificationToken) == "" || strings.TrimSpace(encryptKey) == "" {
+			return "", fmt.Errorf("feishu channel requires app ID, app secret, verification token, and encrypt key")
+		}
+		cfg.Channels.Feishu.Enabled = true
+		cfg.Channels.Feishu.AppID = appID
+		cfg.Channels.Feishu.AppSecret = appSecret
+		cfg.Channels.Feishu.VerificationToken = verificationToken
+		cfg.Channels.Feishu.EncryptKey = encryptKey
+		return "Feishu", nil
 	default:
 		return "", fmt.Errorf("unsupported channel %q", channelID)
 	}
@@ -811,18 +980,26 @@ func (w *setupWizard) promptSecret(label string) string {
 	if !w.interactive {
 		return ""
 	}
+	promptLabel := secretPromptLabel(label, true)
 	if file, ok := w.in.(*os.File); ok && term.IsTerminal(int(file.Fd())) {
-		fmt.Fprintf(w.out, "%s: ", stylePrimary(label))
+		fmt.Fprintf(w.out, "%s: ", promptLabel)
 		value, err := term.ReadPassword(int(file.Fd()))
 		fmt.Fprintln(w.out)
 		if err == nil {
 			return strings.TrimSpace(string(value))
 		}
 	}
-	fmt.Fprintf(w.out, "%s: ", stylePrimary(label))
+	fmt.Fprintf(w.out, "%s: ", promptLabel)
 	value := strings.TrimSpace(w.readLine())
 	fmt.Fprintln(w.out)
 	return value
+}
+
+func secretPromptLabel(label string, hidden bool) string {
+	if !hidden {
+		return stylePrimary(label)
+	}
+	return fmt.Sprintf("%s %s", stylePrimary(label), styleSecondary("[input hidden]"))
 }
 
 func (w *setupWizard) readLine() string {
@@ -863,7 +1040,7 @@ func (w *setupWizard) promptChoiceSelector(context []selectorLine, actionLabel s
 
 	for {
 		clearInteractiveScreen(w.out)
-		fmt.Fprint(w.out, renderSelectorScreen(context, actionLabel, options, selected))
+		fmt.Fprint(w.out, rawTTYScreen(renderSelectorScreen(context, actionLabel, options, selected)))
 
 		key, err := readSelectorKey(inFile)
 		if err != nil {
@@ -896,7 +1073,7 @@ func optionIndexForKey(options []wizardOption, defaultKey string) int {
 }
 
 func clearInteractiveScreen(out io.Writer) {
-	fmt.Fprint(out, "\033[H\033[2J")
+	fmt.Fprint(out, "\033[H\033[2J\r")
 }
 
 func readSelectorKey(in *os.File) (string, error) {
@@ -970,6 +1147,215 @@ func stripANSI(value string) string {
 	return b.String()
 }
 
+func rawTTYScreen(value string) string {
+	return strings.ReplaceAll(value, "\n", "\r\n")
+}
+
+func (w *setupWizard) showGuidance(title string, lines []string) {
+	if !w.interactive || len(lines) == 0 {
+		return
+	}
+	if w.selectorUIEnabled() {
+		clearInteractiveScreen(w.out)
+	}
+	fmt.Fprint(w.out, renderGuideScreen(title, lines))
+}
+
+func buildModelChoices(cfg *config.Config) ([]modelChoice, string) {
+	choices := make([]modelChoice, 0, len(cfg.ModelList)+4)
+	defaultKey := ""
+	currentAlias := strings.TrimSpace(cfg.Agents.Defaults.GetModelName())
+
+	localModels := discoverOllamaModelsFn()
+	for _, name := range localModels {
+		target := "ollama/" + name
+		choice := modelChoice{
+			Key:         "local:" + name,
+			Label:       name,
+			Description: "Detected locally via Ollama on this machine.",
+			Alias:       "private-local",
+			Provider:    "ollama",
+			Target:      target,
+		}
+		choices = append(choices, choice)
+		if currentAlias == "private-local" && defaultKey == "" {
+			if mc, err := cfg.GetModelConfig(currentAlias); err == nil && mc != nil && mc.Model == target {
+				defaultKey = choice.Key
+			}
+		}
+	}
+
+	for _, model := range cfg.ModelList {
+		if len(localModels) > 0 && model.ModelName == "private-local" {
+			continue
+		}
+		provider := providerFromModelTarget(model.Model)
+		if provider == "" {
+			continue
+		}
+
+		desc := model.Model
+		if provider == "ollama" {
+			desc += " • configured local alias"
+		} else if hasModelAPIKey(cfg, model) {
+			desc += " • API key ready"
+		} else {
+			desc += " • API key needed"
+		}
+
+		choice := modelChoice{
+			Key:         "alias:" + model.ModelName,
+			Label:       model.ModelName,
+			Description: desc,
+			Alias:       model.ModelName,
+			Provider:    provider,
+			Target:      model.Model,
+			KeyLabel:    providerKeyLabel(provider),
+			NeedsAPIKey: provider != "ollama" && !hasModelAPIKey(cfg, model),
+		}
+		choices = append(choices, choice)
+
+		if defaultKey == "" && currentAlias == model.ModelName {
+			defaultKey = choice.Key
+		}
+	}
+
+	if defaultKey == "" && len(choices) > 0 {
+		defaultKey = choices[0].Key
+	}
+	return choices, defaultKey
+}
+
+func modelChoiceByKey(choices []modelChoice, key string) (modelChoice, bool) {
+	for _, choice := range choices {
+		if choice.Key == key {
+			return choice, true
+		}
+	}
+	return modelChoice{}, false
+}
+
+func applyModelChoice(cfg *config.Config, choice modelChoice) error {
+	switch {
+	case strings.HasPrefix(choice.Key, "local:"):
+		ensurePrivateLocalModel(cfg, choice.Target)
+		cfg.Agents.Defaults.Provider = "ollama"
+		cfg.Agents.Defaults.ModelName = "private-local"
+		cfg.Agents.Defaults.Model = ""
+		return nil
+	case strings.HasPrefix(choice.Key, "alias:"):
+		cfg.Agents.Defaults.Provider = choice.Provider
+		cfg.Agents.Defaults.ModelName = choice.Alias
+		cfg.Agents.Defaults.Model = ""
+		return nil
+	default:
+		return fmt.Errorf("unsupported model choice %q", choice.Key)
+	}
+}
+
+func ensurePrivateLocalModel(cfg *config.Config, target string) {
+	for index := range cfg.ModelList {
+		if cfg.ModelList[index].ModelName == "private-local" {
+			cfg.ModelList[index].Model = target
+			cfg.ModelList[index].APIBase = "http://localhost:11434/v1"
+			cfg.ModelList[index].APIKey = "ollama"
+			return
+		}
+	}
+
+	cfg.ModelList = append([]config.ModelConfig{{
+		ModelName: "private-local",
+		Model:     target,
+		APIBase:   "http://localhost:11434/v1",
+		APIKey:    "ollama",
+	}}, cfg.ModelList...)
+}
+
+func providerFromModelTarget(target string) string {
+	parts := strings.SplitN(strings.TrimSpace(target), "/", 2)
+	if len(parts) == 0 {
+		return ""
+	}
+	switch parts[0] {
+	case "ollama", "openai", "anthropic", "openrouter", "deepseek", "gemini", "qwen", "groq", "zhipu", "moonshot", "volcengine", "nvidia":
+		return parts[0]
+	default:
+		return ""
+	}
+}
+
+func hasModelAPIKey(cfg *config.Config, model config.ModelConfig) bool {
+	if strings.TrimSpace(model.APIKey) != "" {
+		return true
+	}
+
+	switch providerFromModelTarget(model.Model) {
+	case "ollama":
+		return true
+	case "openai":
+		return strings.TrimSpace(cfg.Providers.OpenAI.APIKey) != ""
+	case "anthropic":
+		return strings.TrimSpace(cfg.Providers.Anthropic.APIKey) != ""
+	case "openrouter":
+		return strings.TrimSpace(cfg.Providers.OpenRouter.APIKey) != ""
+	case "deepseek":
+		return strings.TrimSpace(cfg.Providers.DeepSeek.APIKey) != ""
+	case "gemini":
+		return strings.TrimSpace(cfg.Providers.Gemini.APIKey) != ""
+	case "qwen":
+		return strings.TrimSpace(cfg.Providers.Qwen.APIKey) != ""
+	case "groq":
+		return strings.TrimSpace(cfg.Providers.Groq.APIKey) != ""
+	case "zhipu":
+		return strings.TrimSpace(cfg.Providers.Zhipu.APIKey) != ""
+	case "moonshot":
+		return strings.TrimSpace(cfg.Providers.Moonshot.APIKey) != ""
+	case "volcengine":
+		return strings.TrimSpace(cfg.Providers.VolcEngine.APIKey) != ""
+	case "nvidia":
+		return strings.TrimSpace(cfg.Providers.Nvidia.APIKey) != ""
+	default:
+		return false
+	}
+}
+
+func discoverOllamaModels() []string {
+	if _, err := exec.LookPath("ollama"); err != nil {
+		return nil
+	}
+
+	out, err := exec.Command("ollama", "list").Output()
+	if err != nil {
+		return nil
+	}
+
+	lines := strings.Split(string(out), "\n")
+	models := make([]string, 0, len(lines))
+	seen := map[string]struct{}{}
+	for index, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if index == 0 && strings.HasPrefix(strings.ToUpper(line), "NAME ") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		name := fields[0]
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		models = append(models, name)
+	}
+
+	sort.Strings(models)
+	return models
+}
+
 func applyProviderPreset(cfg *config.Config, preset providerPreset) {
 	cfg.Agents.Defaults.Provider = preset.ID
 	cfg.Agents.Defaults.ModelName = preset.Alias
@@ -986,12 +1372,7 @@ func providerPresetByID(id string) (providerPreset, bool) {
 }
 
 func requiresProviderKey(providerID string) bool {
-	switch providerID {
-	case "openai", "anthropic", "openrouter":
-		return true
-	default:
-		return false
-	}
+	return strings.TrimSpace(providerID) != "" && providerID != "ollama"
 }
 
 func setProviderAPIKey(cfg *config.Config, providerID string, key string) {
@@ -1007,6 +1388,22 @@ func setProviderAPIKey(cfg *config.Config, providerID string, key string) {
 		cfg.Providers.Anthropic.APIKey = key
 	case "openrouter":
 		cfg.Providers.OpenRouter.APIKey = key
+	case "deepseek":
+		cfg.Providers.DeepSeek.APIKey = key
+	case "gemini":
+		cfg.Providers.Gemini.APIKey = key
+	case "qwen":
+		cfg.Providers.Qwen.APIKey = key
+	case "groq":
+		cfg.Providers.Groq.APIKey = key
+	case "zhipu":
+		cfg.Providers.Zhipu.APIKey = key
+	case "moonshot":
+		cfg.Providers.Moonshot.APIKey = key
+	case "volcengine":
+		cfg.Providers.VolcEngine.APIKey = key
+	case "nvidia":
+		cfg.Providers.Nvidia.APIKey = key
 	}
 
 	alias := cfg.Agents.Defaults.GetModelName()
@@ -1025,6 +1422,22 @@ func providerHasAPIKey(cfg *config.Config) bool {
 		return strings.TrimSpace(cfg.Providers.Anthropic.APIKey) != ""
 	case "openrouter":
 		return strings.TrimSpace(cfg.Providers.OpenRouter.APIKey) != ""
+	case "deepseek":
+		return strings.TrimSpace(cfg.Providers.DeepSeek.APIKey) != ""
+	case "gemini":
+		return strings.TrimSpace(cfg.Providers.Gemini.APIKey) != ""
+	case "qwen":
+		return strings.TrimSpace(cfg.Providers.Qwen.APIKey) != ""
+	case "groq":
+		return strings.TrimSpace(cfg.Providers.Groq.APIKey) != ""
+	case "zhipu":
+		return strings.TrimSpace(cfg.Providers.Zhipu.APIKey) != ""
+	case "moonshot":
+		return strings.TrimSpace(cfg.Providers.Moonshot.APIKey) != ""
+	case "volcengine":
+		return strings.TrimSpace(cfg.Providers.VolcEngine.APIKey) != ""
+	case "nvidia":
+		return strings.TrimSpace(cfg.Providers.Nvidia.APIKey) != ""
 	default:
 		return true
 	}
@@ -1048,6 +1461,22 @@ func credentialHint(cfg *config.Config) string {
 		return "Add your Anthropic API key to the generated config before the first chat."
 	case "openrouter":
 		return "Add your OpenRouter API key to the generated config before the first chat."
+	case "deepseek":
+		return "Add your DeepSeek API key to the generated config before the first chat."
+	case "gemini":
+		return "Add your Gemini API key to the generated config before the first chat."
+	case "qwen":
+		return "Add your Qwen API key to the generated config before the first chat."
+	case "groq":
+		return "Add your Groq API key to the generated config before the first chat."
+	case "zhipu":
+		return "Add your Zhipu API key to the generated config before the first chat."
+	case "moonshot":
+		return "Add your Moonshot API key to the generated config before the first chat."
+	case "volcengine":
+		return "Add your VolcEngine API key to the generated config before the first chat."
+	case "nvidia":
+		return "Add your Nvidia API key to the generated config before the first chat."
 	default:
 		return ""
 	}
@@ -1128,6 +1557,18 @@ func normalizeChannel(value string) string {
 		return "matrix"
 	case "slack":
 		return "slack"
+	case "line":
+		return "line"
+	case "irc":
+		return "irc"
+	case "onebot":
+		return "onebot"
+	case "qq":
+		return "qq"
+	case "dingtalk":
+		return "dingtalk"
+	case "feishu":
+		return "feishu"
 	default:
 		return ""
 	}
@@ -1138,4 +1579,55 @@ func labelForChoice(value string, fallback string, labels map[string]string) str
 		return label
 	}
 	return fallback
+}
+
+func providerKeyLabel(providerID string) string {
+	switch providerID {
+	case "openai":
+		return "OpenAI API key"
+	case "anthropic":
+		return "Anthropic API key"
+	case "openrouter":
+		return "OpenRouter API key"
+	case "deepseek":
+		return "DeepSeek API key"
+	case "gemini":
+		return "Gemini API key"
+	case "qwen":
+		return "Qwen API key"
+	case "groq":
+		return "Groq API key"
+	case "zhipu":
+		return "Zhipu API key"
+	case "moonshot":
+		return "Moonshot API key"
+	case "volcengine":
+		return "VolcEngine API key"
+	case "nvidia":
+		return "Nvidia API key"
+	default:
+		return "API key"
+	}
+}
+
+func channelPresetByID(id string) (channelPreset, bool) {
+	for _, preset := range channelPresets {
+		if preset.ID == id {
+			return preset, true
+		}
+	}
+	return channelPreset{}, false
+}
+
+func parseCommaSeparatedList(value string) []string {
+	value = strings.ReplaceAll(value, "，", ",")
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
 }

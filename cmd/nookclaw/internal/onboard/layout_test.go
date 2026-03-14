@@ -35,8 +35,8 @@ func TestRenderSelectorScreen_ModernLayout(t *testing.T) {
 	)
 
 	for _, snippet := range []string{
-		"🐾",
-		"NookClaw",
+		"N O O K C L A W",
+		"private, local-first assistant",
 		"Existing setup detected",
 		"~/.nookclaw/config.json",
 		"Choose an action:",
