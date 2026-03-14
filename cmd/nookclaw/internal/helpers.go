@@ -5,7 +5,7 @@ import (
 	"github.com/samnoadd/NookClaw/pkg/config"
 )
 
-const Logo = "🦞"
+const Logo = "N>"
 
 // GetNookclawHome returns the active NookClaw home directory.
 func GetNookclawHome() string {

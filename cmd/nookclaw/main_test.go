@@ -5,11 +5,9 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/samnoadd/NookClaw/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/samnoadd/NookClaw/cmd/nookclaw/internal"
-	"github.com/samnoadd/NookClaw/pkg/config"
 )
 
 func TestNewNookClawCommand(t *testing.T) {
@@ -17,7 +15,7 @@ func TestNewNookClawCommand(t *testing.T) {
 
 	require.NotNil(t, cmd)
 
-	short := fmt.Sprintf("%s NookClaw - Personal AI Assistant v%s\n\n", internal.Logo, config.GetVersion())
+	short := fmt.Sprintf("NookClaw - Personal AI Assistant v%s", config.GetVersion())
 
 	assert.Equal(t, "nookclaw", cmd.Use)
 	assert.Equal(t, short, cmd.Short)

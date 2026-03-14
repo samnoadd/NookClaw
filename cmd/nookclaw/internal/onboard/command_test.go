@@ -18,12 +18,28 @@ func TestNewOnboardCommand(t *testing.T) {
 	assert.Len(t, cmd.Aliases, 1)
 	assert.True(t, cmd.HasAlias("o"))
 
-	assert.NotNil(t, cmd.Run)
-	assert.Nil(t, cmd.RunE)
+	assert.Nil(t, cmd.Run)
+	assert.NotNil(t, cmd.RunE)
+	assert.NotNil(t, cmd.Args)
 
 	assert.Nil(t, cmd.PersistentPreRun)
 	assert.Nil(t, cmd.PersistentPostRun)
 
-	assert.False(t, cmd.HasFlags())
+	for _, flagName := range []string{
+		"non-interactive",
+		"advanced",
+		"force",
+		"launcher-public",
+		"provider",
+		"api-key",
+		"channel",
+		"channel-secret",
+		"channel-app-token",
+		"channel-user-id",
+		"channel-homeserver",
+	} {
+		assert.NotNil(t, cmd.Flags().Lookup(flagName), "expected flag %q to exist", flagName)
+	}
+
 	assert.False(t, cmd.HasSubCommands())
 }

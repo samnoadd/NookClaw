@@ -24,13 +24,17 @@ NookClaw defines a local-first personal profile for this fork.
 
 ## Build
 
-Prerequisite: install Go, then from the repo root run:
+For general users, install from releases:
 
 ```bash
-make build
+curl -fsSL https://raw.githubusercontent.com/samnoadd/NookClaw/main/install.sh | bash
 ```
 
-The binary will be written to `build/nookclaw`.
+For source builds, install Go and then run:
+
+```bash
+make install
+```
 
 NookClaw now uses the `nookclaw` command name.
 Fresh installs default to `~/.nookclaw`, and the primary environment-variable namespace is `NOOKCLAW_*`.
@@ -38,11 +42,11 @@ For compatibility, NookClaw still detects legacy `~/.picoclaw` data and `PICOCLA
 
 ## Install Locally
 
-After building, you can run your fork directly:
+After installation, run your fork directly:
 
 ```bash
-./build/nookclaw onboard
-./build/nookclaw agent -m "Hello"
+nookclaw onboard
+nookclaw agent -m "Hello"
 ```
 
-If you want this fork to replace an existing install, copy or symlink the built binary into your preferred `PATH` location after testing it.
+If you are developing from the repo without installing, use `./build/nookclaw`.

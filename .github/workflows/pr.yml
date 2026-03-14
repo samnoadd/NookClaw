@@ -16,6 +16,9 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Validate installer script
+        run: bash -n install.sh
+
       - name: Run go generate
         run: go generate ./...
 

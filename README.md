@@ -29,47 +29,64 @@ NookClaw is usable today, but it is still early-stage software. Review the gener
 
 ## Quick Start
 
-Clone and build:
+Install from the latest GitHub release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/samnoadd/NookClaw/main/install.sh | bash
+```
+
+Pin a specific release or install to a custom directory:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/samnoadd/NookClaw/main/install.sh | NOOKCLAW_VERSION=v0.1.0 bash
+curl -fsSL https://raw.githubusercontent.com/samnoadd/NookClaw/main/install.sh | NOOKCLAW_INSTALL_DIR="$HOME/bin" bash
+```
+
+Build from source instead:
 
 ```bash
 git clone https://github.com/samnoadd/NookClaw.git
 cd NookClaw
 make deps
-make build
+make install
 ```
 
-Initialize a fresh workspace:
+After installation, use the `nookclaw` command directly:
 
 ```bash
-./build/nookclaw onboard
-./build/nookclaw status
+nookclaw onboard
+nookclaw status
 ```
 
 Then open your config, choose the model/provider you want to use, and run the agent:
 
 ```bash
-./build/nookclaw agent -m "hello"
+nookclaw agent -m "hello"
 ```
 
 For isolated testing:
 
 ```bash
-NOOKCLAW_HOME=/tmp/nookclaw-test ./build/nookclaw onboard
-NOOKCLAW_HOME=/tmp/nookclaw-test ./build/nookclaw status
-NOOKCLAW_HOME=/tmp/nookclaw-test ./build/nookclaw agent -m "hello"
+NOOKCLAW_HOME=/tmp/nookclaw-test nookclaw onboard
+NOOKCLAW_HOME=/tmp/nookclaw-test nookclaw status
+NOOKCLAW_HOME=/tmp/nookclaw-test nookclaw agent -m "hello"
 ```
+
+If you are developing from the repo without installing, use `./build/nookclaw`.
+
+The installer script downloads the matching release archive for your OS and architecture, verifies its SHA-256 checksum, and installs `nookclaw` into `~/.local/bin` by default.
 
 ## Main Commands
 
 ```bash
-./build/nookclaw agent
-./build/nookclaw status
-./build/nookclaw model
-./build/nookclaw skills
-./build/nookclaw cron
-./build/nookclaw gateway
-./build/nookclaw migrate
-./build/nookclaw --help
+nookclaw agent
+nookclaw status
+nookclaw model
+nookclaw skills
+nookclaw cron
+nookclaw gateway
+nookclaw migrate
+nookclaw --help
 ```
 
 ## Web Launcher
@@ -113,14 +130,9 @@ Common development targets:
 ```bash
 make deps
 make build
+make install
 make test
 make build-launcher
-```
-
-Install the CLI into `~/.local/bin`:
-
-```bash
-make install
 ```
 
 ## Migration
@@ -130,9 +142,9 @@ NookClaw includes migration commands for importing configuration and workspace d
 Examples:
 
 ```bash
-./build/nookclaw migrate
-./build/nookclaw migrate --from openclaw
-./build/nookclaw migrate --dry-run
+nookclaw migrate
+nookclaw migrate --from openclaw
+nookclaw migrate --dry-run
 ```
 
 ## License

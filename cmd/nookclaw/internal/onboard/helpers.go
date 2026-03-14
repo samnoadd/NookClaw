@@ -9,38 +9,51 @@ import (
 
 	"github.com/samnoadd/NookClaw/cmd/nookclaw/internal"
 	"github.com/samnoadd/NookClaw/pkg/config"
+	"github.com/samnoadd/NookClaw/web/backend/launcherconfig"
 )
 
-func onboard() {
-	configPath := internal.GetDefaultConfigPath()
-	updated := false
+func onboard(opts onboardOptions) error {
+	if err := validateOnboardOptions(opts); err != nil {
+		return err
+	}
 
-	if _, err := os.Stat(configPath); err == nil {
-		fmt.Printf("A NookClaw config already exists at %s\n", configPath)
-		fmt.Print("Replace it with a fresh onboarding setup? (y/N): ")
-		var response string
-		fmt.Scanln(&response)
-		if !strings.EqualFold(strings.TrimSpace(response), "y") &&
-			!strings.EqualFold(strings.TrimSpace(response), "yes") {
-			fmt.Println("Aborted.")
-			return
-		}
-		updated = true
+	configPath := internal.GetDefaultConfigPath()
+	interactive := !opts.NonInteractive && isInteractiveTerminal()
+	updated, proceed := handleExistingSetup(configPath, interactive, opts.Force, os.Stdin, os.Stdout)
+	if !proceed {
+		return nil
 	}
 
 	cfg := config.DefaultConfig()
+	state, err := newSetupWizard(os.Stdin, os.Stdout, interactive, opts).run(cfg)
+	if err != nil {
+		if err == errOnboardingAborted {
+			return nil
+		}
+		return err
+	}
 	if err := config.SaveConfig(configPath, cfg); err != nil {
-		fmt.Printf("Error saving config: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("saving config: %w", err)
 	}
 
 	workspace := cfg.WorkspacePath()
 	createWorkspaceTemplates(workspace)
+	launcherPath := launcherconfig.PathForAppConfig(configPath)
+	if err := launcherconfig.Save(launcherPath, state.LauncherConfig); err != nil {
+		return fmt.Errorf("saving launcher config: %w", err)
+	}
 
-	fmt.Print(buildOnboardingMessage(cfg, configPath, updated))
+	fmt.Print(buildOnboardingMessage(cfg, configPath, launcherPath, updated, state))
+	return nil
 }
 
-func buildOnboardingMessage(cfg *config.Config, configPath string, updated bool) string {
+func buildOnboardingMessage(
+	cfg *config.Config,
+	configPath string,
+	launcherPath string,
+	updated bool,
+	state onboardingState,
+) string {
 	title := "Setup Complete"
 	if updated {
 		title = "Setup Updated"
@@ -52,26 +65,42 @@ func buildOnboardingMessage(cfg *config.Config, configPath string, updated bool)
 		modelTarget = modelCfg.Model
 	}
 
+	safety := buildSafetyNotes(cfg, state)
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s NookClaw %s\n\n", internal.Logo, title)
+	b.WriteString(renderBanner(
+		title,
+		"NookClaw workspace, launcher, and runtime profile are ready.",
+	))
+	b.WriteString("\n")
 
-	fmt.Fprintln(&b, "Created")
-	fmt.Fprintf(&b, "  Config:       %s\n", configPath)
-	fmt.Fprintf(&b, "  Workspace:    %s\n", cfg.WorkspacePath())
-	fmt.Fprintf(&b, "  Gateway:      %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
-
-	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "Default Runtime")
-	fmt.Fprintf(&b, "  Model alias:  %s\n", valueOrFallback(modelAlias, "(not set)"))
-	fmt.Fprintf(&b, "  Model target: %s\n", modelTarget)
-	fmt.Fprintf(&b, "  Channels:     %s\n", enabledChannelsSummary(cfg))
-	fmt.Fprintf(&b, "  Web tools:    %s\n", statusLabel(cfg.Tools.Web.Enabled))
-	fmt.Fprintf(&b, "  Scheduler:    %s\n", statusLabel(cfg.Tools.Cron.Enabled))
-	fmt.Fprintf(&b, "  Heartbeat:    %s\n", statusLabel(cfg.Heartbeat.Enabled))
-	fmt.Fprintf(&b, "  Remote exec:  %s\n", statusLabel(cfg.Tools.Exec.AllowRemote))
+	b.WriteString(renderSummarySection("Configuration"))
+	fmt.Fprintf(&b, "  Config:         %s\n", configPath)
+	fmt.Fprintf(&b, "  Workspace:      %s\n", cfg.WorkspacePath())
+	fmt.Fprintf(&b, "  Launcher:       %s (%s)\n", launcherPath, launcherAccessLabel(state.LauncherConfig))
+	fmt.Fprintf(&b, "  Gateway:        %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
 
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "Recommended Next Steps")
+	b.WriteString(renderSummarySection("Runtime Profile"))
+	fmt.Fprintf(&b, "  Setup mode:     %s\n", valueOrFallback(state.SetupMode, quickStartMode))
+	fmt.Fprintf(&b, "  Provider:       %s\n", valueOrFallback(cfg.Agents.Defaults.Provider, "(not set)"))
+	fmt.Fprintf(&b, "  Model alias:    %s\n", valueOrFallback(modelAlias, "(not set)"))
+	fmt.Fprintf(&b, "  Model target:   %s\n", modelTarget)
+	fmt.Fprintf(&b, "  Channels:       %s\n", enabledChannelsSummary(cfg))
+	fmt.Fprintf(&b, "  Web tools:      %s\n", statusLabel(cfg.Tools.Web.Enabled))
+	fmt.Fprintf(&b, "  Scheduler:      %s\n", statusLabel(cfg.Tools.Cron.Enabled))
+	fmt.Fprintf(&b, "  Heartbeat:      %s\n", statusLabel(cfg.Heartbeat.Enabled))
+	fmt.Fprintf(&b, "  Remote exec:    %s\n", statusLabel(cfg.Tools.Exec.AllowRemote))
+
+	if len(safety) > 0 {
+		fmt.Fprintln(&b)
+		b.WriteString(renderSummarySection("Safety Notes"))
+		for _, note := range safety {
+			fmt.Fprintf(&b, "  - %s\n", note)
+		}
+	}
+
+	fmt.Fprintln(&b)
+	b.WriteString(renderSummarySection("Next Steps"))
 	fmt.Fprintln(&b, "  1. Review the generated setup")
 	fmt.Fprintln(&b, "     nookclaw status")
 	fmt.Fprintln(&b, "     nookclaw model")
@@ -81,11 +110,39 @@ func buildOnboardingMessage(cfg *config.Config, configPath string, updated bool)
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "  3. Open the web launcher")
 	fmt.Fprintln(&b, "     make build-launcher && ./build/nookclaw-launcher")
-	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "  4. Import an existing setup if needed")
-	fmt.Fprintln(&b, "     nookclaw migrate --from openclaw")
+
+	if state.DetectedOpenClaw != "" {
+		fmt.Fprintln(&b)
+		b.WriteString(renderSummarySection("Migration"))
+		fmt.Fprintf(&b, "  OpenClaw setup detected at %s\n", state.DetectedOpenClaw)
+		fmt.Fprintln(&b, "  Import it later with:")
+		fmt.Fprintln(&b, "    nookclaw migrate --from openclaw")
+	}
+
+	if state.CredentialHint != "" {
+		fmt.Fprintln(&b)
+		b.WriteString(renderSummarySection("Credentials"))
+		fmt.Fprintf(&b, "  %s\n", state.CredentialHint)
+	}
 
 	return b.String()
+}
+
+func buildSafetyNotes(cfg *config.Config, state onboardingState) []string {
+	var notes []string
+	if state.LauncherConfig.Public {
+		notes = append(notes, "Launcher access is open to the local network. Review your host firewall and channel allowlists before wider exposure.")
+	}
+	if cfg.Tools.Exec.AllowRemote {
+		notes = append(notes, "Remote exec is enabled. Keep this setup limited to trusted operators and trusted prompts.")
+	}
+	if enabledChannelsSummary(cfg) != "none enabled" {
+		notes = append(notes, "At least one inbound channel is enabled. Confirm the token scope and message allowlists before daily use.")
+	}
+	if cfg.Tools.Web.Enabled {
+		notes = append(notes, "Web tools are enabled. Prompts may cause outbound fetches or searches when the runtime decides they are useful.")
+	}
+	return notes
 }
 
 func enabledChannelsSummary(cfg *config.Config) string {

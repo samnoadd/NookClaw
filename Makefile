@@ -305,7 +305,7 @@ help:
 	@echo "Examples:"
 	@echo "  make build              # Build for current platform"
 	@echo "  make install            # Install to ~/.local/bin"
-	@echo "  make uninstall          # Remove from /usr/local/bin"
+	@echo "  make uninstall          # Remove from ~/.local/bin"
 	@echo "  make install-skills     # Install skills to workspace"
 	@echo "  make docker-build       # Build minimal Docker image"
 	@echo "  make docker-test        # Test MCP tools in Docker"
