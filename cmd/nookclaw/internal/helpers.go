@@ -16,6 +16,10 @@ func GetConfigPath() string {
 	return appenv.ConfigPath()
 }
 
+func GetDefaultConfigPath() string {
+	return appenv.DefaultConfigPath()
+}
+
 func LoadConfig() (*config.Config, error) {
 	return config.LoadConfig(GetConfigPath())
 }

@@ -11,7 +11,7 @@ import (
 )
 
 func onboard() {
-	configPath := internal.GetConfigPath()
+	configPath := internal.GetDefaultConfigPath()
 
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Printf("Config already exists at %s\n", configPath)

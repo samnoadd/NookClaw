@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -52,4 +53,18 @@ func TestGetConfigPath_Windows(t *testing.T) {
 	want := filepath.Join(testUserProfilePath, ".nookclaw", "config.json")
 
 	require.True(t, strings.EqualFold(got, want), "GetConfigPath() = %q, want %q", got, want)
+}
+
+func TestGetDefaultConfigPath_IgnoresLegacyConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	legacyConfig := filepath.Join(home, ".picoclaw", "config.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(legacyConfig), 0o755))
+	require.NoError(t, os.WriteFile(legacyConfig, []byte("{}"), 0o644))
+
+	got := GetDefaultConfigPath()
+	want := filepath.Join(home, ".nookclaw", "config.json")
+
+	assert.Equal(t, want, got)
 }
