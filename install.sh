@@ -161,6 +161,14 @@ resolve_legacy_asset_name() {
   printf 'NookClaw_%s_%s.tar.gz' "$os" "$arch"
 }
 
+resolve_checksums_name() {
+  printf 'checksums.txt'
+}
+
+resolve_legacy_checksums_name() {
+  printf 'NookClaw_%s_checksums.txt' "${VERSION#v}"
+}
+
 checksum_file_for() {
   local path="$1"
   if command -v sha256sum >/dev/null 2>&1; then
@@ -199,7 +207,9 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 ARCHIVE_PATH="${TMP_DIR}/${ASSET_NAME}"
-CHECKSUMS_PATH="${TMP_DIR}/checksums.txt"
+CHECKSUMS_NAME="$(resolve_checksums_name)"
+LEGACY_CHECKSUMS_NAME="$(resolve_legacy_checksums_name)"
+CHECKSUMS_PATH="${TMP_DIR}/${CHECKSUMS_NAME}"
 
 printf 'Installing NookClaw %s for %s/%s\n' "$VERSION" "$OS_NAME" "$ARCH_NAME"
 
@@ -212,7 +222,10 @@ if ! download_file "${DOWNLOAD_BASE}/${ASSET_NAME}" "$ARCHIVE_PATH"; then
   ASSET_NAME="${LEGACY_ASSET_NAME}"
 fi
 
-download_file "${DOWNLOAD_BASE}/checksums.txt" "$CHECKSUMS_PATH"
+if ! download_file "${DOWNLOAD_BASE}/${CHECKSUMS_NAME}" "$CHECKSUMS_PATH"; then
+  CHECKSUMS_PATH="${TMP_DIR}/${LEGACY_CHECKSUMS_NAME}"
+  download_file "${DOWNLOAD_BASE}/${LEGACY_CHECKSUMS_NAME}" "$CHECKSUMS_PATH"
+fi
 
 EXPECTED_SHA="$(awk -v file="$ASSET_NAME" '$2 == file { print $1 }' "$CHECKSUMS_PATH" | head -n 1)"
 if [ -z "$EXPECTED_SHA" ]; then
@@ -228,13 +241,18 @@ fi
 
 tar -xzf "$ARCHIVE_PATH" -C "$TMP_DIR"
 
-if [ ! -f "${TMP_DIR}/nookclaw" ]; then
+INSTALLED_BINARY="${TMP_DIR}/nookclaw"
+if [ ! -f "$INSTALLED_BINARY" ]; then
+  INSTALLED_BINARY="${TMP_DIR}/NookClaw"
+fi
+
+if [ ! -f "$INSTALLED_BINARY" ]; then
   printf 'Archive did not contain a nookclaw binary\n' >&2
   exit 1
 fi
 
 mkdir -p "$INSTALL_DIR"
-install -m 0755 "${TMP_DIR}/nookclaw" "${INSTALL_DIR}/nookclaw"
+install -m 0755 "$INSTALLED_BINARY" "${INSTALL_DIR}/nookclaw"
 
 printf 'Installed %s\n' "${INSTALL_DIR}/nookclaw"
 print_path_hint
