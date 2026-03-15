@@ -77,6 +77,7 @@ func buildOnboardingMessage(
 	fmt.Fprintf(&b, "  Config:         %s\n", configPath)
 	fmt.Fprintf(&b, "  Workspace:      %s\n", cfg.WorkspacePath())
 	fmt.Fprintf(&b, "  Launcher:       %s (%s)\n", launcherPath, launcherAccessLabel(state.LauncherConfig))
+	fmt.Fprintln(&b, "  Note:           Launcher access is stored separately from config.json")
 	fmt.Fprintf(&b, "  Gateway:        %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
 
 	fmt.Fprintln(&b)

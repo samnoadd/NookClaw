@@ -48,6 +48,7 @@ func TestBuildOnboardingMessage_GuidedSummary(t *testing.T) {
 		"Setup Complete",
 		"NookClaw workspace, launcher, and runtime profile are ready.",
 		"Configuration",
+		"Launcher access is stored separately from config.json",
 		"Runtime Profile",
 		"Next Steps",
 		"Quick Start",
@@ -117,5 +118,53 @@ func TestEnabledChannelsSummary(t *testing.T) {
 	cfg.Channels.WeCom.Enabled = true
 	if got := enabledChannelsSummary(cfg); got != "Telegram, Matrix, WeCom" {
 		t.Fatalf("enabledChannelsSummary() = %q, want %q", got, "Telegram, Matrix, WeCom")
+	}
+}
+
+func TestOnboard_NonInteractivePersistsConfigAndLauncher(t *testing.T) {
+	tempHome := t.TempDir()
+	t.Setenv("NOOKCLAW_HOME", tempHome)
+	t.Setenv("PICOCLAW_HOME", "")
+	t.Setenv("NOOKCLAW_CONFIG", "")
+	t.Setenv("PICOCLAW_CONFIG", "")
+
+	if err := onboard(onboardOptions{
+		NonInteractive: true,
+		Advanced:       true,
+		Provider:       "openai",
+		APIKey:         "openai-key",
+		Channel:        "telegram",
+		ChannelSecret:  "telegram-token",
+		LauncherPublic: true,
+	}); err != nil {
+		t.Fatalf("onboard() error = %v", err)
+	}
+
+	configPath := filepath.Join(tempHome, "config.json")
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	if cfg.Agents.Defaults.Provider != "openai" {
+		t.Fatalf("Provider = %q, want %q", cfg.Agents.Defaults.Provider, "openai")
+	}
+	if cfg.Agents.Defaults.ModelName != "gpt-5.4" {
+		t.Fatalf("ModelName = %q, want %q", cfg.Agents.Defaults.ModelName, "gpt-5.4")
+	}
+	if cfg.Providers.OpenAI.APIKey != "openai-key" {
+		t.Fatalf("OpenAI API key = %q, want %q", cfg.Providers.OpenAI.APIKey, "openai-key")
+	}
+	if !cfg.Channels.Telegram.Enabled || cfg.Channels.Telegram.Token != "telegram-token" {
+		t.Fatal("expected Telegram channel settings to be persisted")
+	}
+
+	launcherPath := launcherconfig.PathForAppConfig(configPath)
+	launcherCfg, err := launcherconfig.Load(launcherPath, launcherconfig.Default())
+	if err != nil {
+		t.Fatalf("launcherconfig.Load() error = %v", err)
+	}
+	if !launcherCfg.Public {
+		t.Fatal("expected launcher config to persist public access")
 	}
 }

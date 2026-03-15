@@ -176,6 +176,49 @@ func TestSetupWizardRun_NonInteractiveFlags(t *testing.T) {
 	}
 }
 
+func TestSetupWizardRun_InteractiveProviderFlagsSeedModelSelection(t *testing.T) {
+	disableOllamaDiscovery(t)
+	cfg := config.DefaultConfig()
+	var out bytes.Buffer
+
+	state, err := newSetupWizard(
+		strings.NewReader("1\n\n\n\n"),
+		&out,
+		true,
+		onboardOptions{
+			Provider: "openai",
+			APIKey:   "openai-key",
+		},
+	).run(cfg)
+	if err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	if state.SetupMode != advancedMode {
+		t.Fatalf("SetupMode = %q, want %q", state.SetupMode, advancedMode)
+	}
+	if cfg.Agents.Defaults.Provider != "openai" {
+		t.Fatalf("Provider = %q, want %q", cfg.Agents.Defaults.Provider, "openai")
+	}
+	if cfg.Agents.Defaults.ModelName != "gpt-5.4" {
+		t.Fatalf("ModelName = %q, want %q", cfg.Agents.Defaults.ModelName, "gpt-5.4")
+	}
+	if cfg.Providers.OpenAI.APIKey != "openai-key" {
+		t.Fatalf("OpenAI API key = %q, want %q", cfg.Providers.OpenAI.APIKey, "openai-key")
+	}
+	if state.ConfiguredChannel != "none" {
+		t.Fatalf("ConfiguredChannel = %q, want %q", state.ConfiguredChannel, "none")
+	}
+	if state.CredentialHint != "" {
+		t.Fatalf("CredentialHint = %q, want empty after saving API key", state.CredentialHint)
+	}
+
+	output := out.String()
+	if strings.Contains(output, "Add your OpenAI API key now?") {
+		t.Fatalf("did not expect API key prompt when --api-key is provided\noutput:\n%s", output)
+	}
+}
+
 func TestValidateOnboardOptions(t *testing.T) {
 	if err := validateOnboardOptions(onboardOptions{
 		NonInteractive: true,
@@ -196,6 +239,15 @@ func TestValidateOnboardOptions(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "--channel matrix requires --channel-secret and --channel-user-id") {
 		t.Fatalf("validateOnboardOptions() error = %v, want missing matrix user ID error", err)
+	}
+
+	err = validateOnboardOptions(onboardOptions{
+		NonInteractive: true,
+		Channel:        "line",
+		ChannelSecret:  "line-secret",
+	})
+	if err == nil || !strings.Contains(err.Error(), "--channel line is only supported interactively for now") {
+		t.Fatalf("validateOnboardOptions() error = %v, want interactive-only line error", err)
 	}
 }
 

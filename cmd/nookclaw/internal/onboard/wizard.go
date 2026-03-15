@@ -265,13 +265,13 @@ func validateOnboardOptions(opts onboardOptions) error {
 	}
 
 	if opts.Channel != "" && channel == "" {
-		return fmt.Errorf("unsupported channel %q: use telegram, discord, matrix, or slack", opts.Channel)
+		return fmt.Errorf("unsupported channel %q: use telegram, discord, matrix, slack, line, irc, onebot, qq, dingtalk, or feishu", opts.Channel)
 	}
 	if opts.ChannelSecret != "" && channel == "" {
 		return fmt.Errorf("--channel-secret requires --channel")
 	}
-	if opts.ChannelAppToken != "" && channel != "slack" {
-		return fmt.Errorf("--channel-app-token requires --channel slack")
+	if opts.ChannelAppToken != "" && channel != "slack" && channel != "line" {
+		return fmt.Errorf("--channel-app-token requires --channel slack or --channel line")
 	}
 	if opts.ChannelUserID != "" && channel != "matrix" {
 		return fmt.Errorf("--channel-user-id requires --channel matrix")
@@ -294,12 +294,8 @@ func validateOnboardOptions(opts onboardOptions) error {
 			if strings.TrimSpace(opts.ChannelSecret) == "" || strings.TrimSpace(opts.ChannelUserID) == "" {
 				return fmt.Errorf("--channel matrix requires --channel-secret and --channel-user-id in non-interactive mode")
 			}
-		case "line", "qq", "dingtalk", "feishu":
-			if strings.TrimSpace(opts.ChannelSecret) == "" {
-				return fmt.Errorf("--channel %s requires --channel-secret in non-interactive mode", channel)
-			}
-		case "onebot", "irc":
-			// Optional non-interactive support is currently config-driven for these channels.
+		case "line", "irc", "onebot", "qq", "dingtalk", "feishu":
+			return fmt.Errorf("--channel %s is only supported interactively for now", channel)
 		}
 	}
 
@@ -447,6 +443,10 @@ func (w *setupWizard) run(cfg *config.Config) (onboardingState, error) {
 		fmt.Fprintln(w.out)
 	}
 
+	if err := w.configureProviderFromFlags(cfg); err != nil {
+		return onboardingState{}, err
+	}
+
 	w.printSection(
 		"Model selection",
 		"Choose the model NookClaw should use by default. Quick Start still needs a real model choice.",
@@ -547,6 +547,9 @@ func (w *setupWizard) configureModel(cfg *config.Config) error {
 
 	if choice.NeedsAPIKey {
 		key := strings.TrimSpace(w.opts.APIKey)
+		if providerID := normalizeProvider(w.opts.Provider); providerID != "" && providerID != choice.Provider {
+			key = ""
+		}
 		if key == "" {
 			if providerHasAPIKey(cfg) {
 				return nil
