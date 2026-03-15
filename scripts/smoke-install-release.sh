@@ -16,6 +16,7 @@ if [ ! -d "$DIST_DIR" ]; then
   exit 1
 fi
 
+DIST_DIR="$(cd "$DIST_DIR" && pwd)"
 DOWNLOAD_BASE="file://${DIST_DIR}"
 declare -a CLEANUP_DIRS=()
 
