@@ -38,7 +38,7 @@ curl -fsSL https://raw.githubusercontent.com/samnoadd/NookClaw/main/install.sh |
 Install a specific release or use a custom install directory:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/samnoadd/NookClaw/main/install.sh | NOOKCLAW_VERSION=v0.1.0 bash
+curl -fsSL https://raw.githubusercontent.com/samnoadd/NookClaw/main/install.sh | NOOKCLAW_VERSION=v0.1.4 bash
 curl -fsSL https://raw.githubusercontent.com/samnoadd/NookClaw/main/install.sh | NOOKCLAW_INSTALL_DIR="$HOME/bin" bash
 ```
 

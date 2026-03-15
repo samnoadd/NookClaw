@@ -152,13 +152,13 @@ resolve_version() {
 resolve_asset_name() {
   local os="$1"
   local arch="$2"
-  printf 'nookclaw_%s_%s.tar.gz' "$os" "$arch"
+  printf 'NookClaw_%s_%s.tar.gz' "$os" "$arch"
 }
 
 resolve_legacy_asset_name() {
   local os="$1"
   local arch="$2"
-  printf 'NookClaw_%s_%s.tar.gz' "$os" "$arch"
+  printf 'nookclaw_%s_%s.tar.gz' "$os" "$arch"
 }
 
 resolve_checksums_name() {
@@ -167,6 +167,23 @@ resolve_checksums_name() {
 
 resolve_legacy_checksums_name() {
   printf 'NookClaw_%s_checksums.txt' "${VERSION#v}"
+}
+
+lookup_checksum() {
+  local checksums_path="$1"
+  local primary_name="$2"
+  local fallback_name="$3"
+
+  awk -v primary="$primary_name" -v fallback="$fallback_name" '
+    {
+      file = $2
+      sub(/^\*/, "", file)
+      if (file == primary || file == fallback) {
+        print $1
+        exit
+      }
+    }
+  ' "$checksums_path"
 }
 
 checksum_file_for() {
@@ -213,8 +230,8 @@ CHECKSUMS_PATH="${TMP_DIR}/${CHECKSUMS_NAME}"
 
 printf 'Installing NookClaw %s for %s/%s\n' "$VERSION" "$OS_NAME" "$ARCH_NAME"
 
-if ! download_file "${DOWNLOAD_BASE}/${ASSET_NAME}" "$ARCHIVE_PATH"; then
-  if ! download_file "${DOWNLOAD_BASE}/${LEGACY_ASSET_NAME}" "${TMP_DIR}/${LEGACY_ASSET_NAME}"; then
+if ! download_file "${DOWNLOAD_BASE}/${ASSET_NAME}" "$ARCHIVE_PATH" 2>/dev/null; then
+  if ! download_file "${DOWNLOAD_BASE}/${LEGACY_ASSET_NAME}" "${TMP_DIR}/${LEGACY_ASSET_NAME}" 2>/dev/null; then
     printf 'No release archive found for %s/%s in %s\n' "$OS_NAME" "$ARCH_NAME" "$VERSION" >&2
     exit 1
   fi
@@ -222,12 +239,12 @@ if ! download_file "${DOWNLOAD_BASE}/${ASSET_NAME}" "$ARCHIVE_PATH"; then
   ASSET_NAME="${LEGACY_ASSET_NAME}"
 fi
 
-if ! download_file "${DOWNLOAD_BASE}/${CHECKSUMS_NAME}" "$CHECKSUMS_PATH"; then
+if ! download_file "${DOWNLOAD_BASE}/${CHECKSUMS_NAME}" "$CHECKSUMS_PATH" 2>/dev/null; then
   CHECKSUMS_PATH="${TMP_DIR}/${LEGACY_CHECKSUMS_NAME}"
   download_file "${DOWNLOAD_BASE}/${LEGACY_CHECKSUMS_NAME}" "$CHECKSUMS_PATH"
 fi
 
-EXPECTED_SHA="$(awk -v file="$ASSET_NAME" '$2 == file { print $1 }' "$CHECKSUMS_PATH" | head -n 1)"
+EXPECTED_SHA="$(lookup_checksum "$CHECKSUMS_PATH" "$ASSET_NAME" "$LEGACY_ASSET_NAME")"
 if [ -z "$EXPECTED_SHA" ]; then
   printf 'No checksum entry found for %s\n' "$ASSET_NAME" >&2
   exit 1
