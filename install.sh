@@ -239,7 +239,6 @@ ARCH_NAME="$(detect_arch)"
 VERSION="$(resolve_version)"
 ASSET_NAME="$(resolve_asset_name "$OS_NAME" "$ARCH_NAME")"
 LEGACY_ASSET_NAME="$(resolve_legacy_asset_name "$OS_NAME" "$ARCH_NAME")"
-DOWNLOAD_BASE="https://github.com/${REPO}/releases/download/${VERSION}"
 
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
