@@ -19,12 +19,22 @@ func disableOllamaDiscovery(t *testing.T) {
 	})
 }
 
+func setGatewayUserServiceSupport(t *testing.T, supported bool) {
+	t.Helper()
+	original := gatewaySupportsUserService
+	gatewaySupportsUserService = func() bool { return supported }
+	t.Cleanup(func() {
+		gatewaySupportsUserService = original
+	})
+}
+
 func TestSetupWizardRun_AdvancedFlow(t *testing.T) {
 	disableOllamaDiscovery(t)
+	setGatewayUserServiceSupport(t, true)
 	cfg := config.DefaultConfig()
 	var out bytes.Buffer
 
-	input := strings.NewReader("1\n2\n4\ny\nanthropic-key\ny\nn\ny\ny\n2\ntelegram-token\n2\n")
+	input := strings.NewReader("1\n2\n4\ny\nanthropic-key\ny\nn\ny\ny\n2\ntelegram-token\n123456789,@alice\nn\n2\n")
 	state, err := newSetupWizard(input, &out, true, onboardOptions{}).run(cfg)
 	if err != nil {
 		t.Fatalf("run() error = %v", err)
@@ -57,8 +67,14 @@ func TestSetupWizardRun_AdvancedFlow(t *testing.T) {
 	if !cfg.Channels.Telegram.Enabled || cfg.Channels.Telegram.Token != "telegram-token" {
 		t.Fatal("expected Telegram channel to be configured")
 	}
+	if got := []string(cfg.Channels.Telegram.AllowFrom); !slicesEqual(got, []string{"123456789", "@alice"}) {
+		t.Fatalf("Telegram allow_from = %v, want %v", got, []string{"123456789", "@alice"})
+	}
 	if state.ConfiguredChannel != "Telegram" {
 		t.Fatalf("ConfiguredChannel = %q, want %q", state.ConfiguredChannel, "Telegram")
+	}
+	if state.GatewayAutostart {
+		t.Fatal("expected gateway autostart to remain disabled")
 	}
 	if !state.LauncherConfig.Public {
 		t.Fatal("expected launcher to be public on the local network")
@@ -78,7 +94,9 @@ func TestSetupWizardRun_AdvancedFlow(t *testing.T) {
 		"Telegram setup",
 		"@BotFather",
 		"3. Channel access",
-		"4. Launcher access",
+		"Telegram allow_from entries",
+		"4. Gateway runtime",
+		"5. Launcher access",
 	} {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected wizard output to contain %q\noutput:\n%s", snippet, output)
@@ -88,6 +106,7 @@ func TestSetupWizardRun_AdvancedFlow(t *testing.T) {
 
 func TestSetupWizardRun_QuickStartMentionsDetectedOpenClaw(t *testing.T) {
 	disableOllamaDiscovery(t)
+	setGatewayUserServiceSupport(t, false)
 	tempHome := t.TempDir()
 	openClawHome := filepath.Join(tempHome, ".openclaw")
 	if err := os.MkdirAll(openClawHome, 0o755); err != nil {
@@ -138,6 +157,7 @@ func TestSetupWizardRun_QuickStartMentionsDetectedOpenClaw(t *testing.T) {
 
 func TestSetupWizardRun_NonInteractiveFlags(t *testing.T) {
 	disableOllamaDiscovery(t)
+	setGatewayUserServiceSupport(t, true)
 	cfg := config.DefaultConfig()
 	state, err := newSetupWizard(
 		strings.NewReader(""),
@@ -149,6 +169,7 @@ func TestSetupWizardRun_NonInteractiveFlags(t *testing.T) {
 			APIKey:         "openai-key",
 			Channel:        "telegram",
 			ChannelSecret:  "telegram-token",
+			ChannelAllowFrom: "telegram:123456789,@alice",
 			LauncherPublic: true,
 		},
 	).run(cfg)
@@ -171,6 +192,9 @@ func TestSetupWizardRun_NonInteractiveFlags(t *testing.T) {
 	if !cfg.Channels.Telegram.Enabled || cfg.Channels.Telegram.Token != "telegram-token" {
 		t.Fatal("expected Telegram channel to be configured")
 	}
+	if got := []string(cfg.Channels.Telegram.AllowFrom); !slicesEqual(got, []string{"telegram:123456789", "@alice"}) {
+		t.Fatalf("Telegram allow_from = %v, want %v", got, []string{"telegram:123456789", "@alice"})
+	}
 	if state.CredentialHint != "" {
 		t.Fatalf("CredentialHint = %q, want empty after saving API key", state.CredentialHint)
 	}
@@ -178,6 +202,7 @@ func TestSetupWizardRun_NonInteractiveFlags(t *testing.T) {
 
 func TestSetupWizardRun_InteractiveProviderFlagsSeedModelSelection(t *testing.T) {
 	disableOllamaDiscovery(t)
+	setGatewayUserServiceSupport(t, false)
 	cfg := config.DefaultConfig()
 	var out bytes.Buffer
 
@@ -220,6 +245,7 @@ func TestSetupWizardRun_InteractiveProviderFlagsSeedModelSelection(t *testing.T)
 }
 
 func TestValidateOnboardOptions(t *testing.T) {
+	setGatewayUserServiceSupport(t, true)
 	if err := validateOnboardOptions(onboardOptions{
 		NonInteractive: true,
 		Provider:       "openai",
@@ -249,6 +275,25 @@ func TestValidateOnboardOptions(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "--channel line is only supported interactively for now") {
 		t.Fatalf("validateOnboardOptions() error = %v, want interactive-only line error", err)
 	}
+
+	err = validateOnboardOptions(onboardOptions{
+		ChannelAllowFrom: "123456789",
+	})
+	if err == nil || !strings.Contains(err.Error(), "--channel-allow-from currently requires --channel telegram") {
+		t.Fatalf("validateOnboardOptions() error = %v, want telegram allow_from validation error", err)
+	}
+}
+
+func slicesEqual(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestHandleExistingSetup_InteractiveKeep(t *testing.T) {

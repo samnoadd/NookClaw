@@ -32,6 +32,8 @@ func TestBuildOnboardingMessage_GuidedSummary(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Gateway.Host = "127.0.0.1"
 	cfg.Gateway.Port = 18790
+	cfg.Channels.Telegram.Enabled = true
+	cfg.Channels.Telegram.Token = "telegram-token"
 
 	msg := buildOnboardingMessage(
 		cfg,
@@ -50,6 +52,8 @@ func TestBuildOnboardingMessage_GuidedSummary(t *testing.T) {
 		"Configuration",
 		"Launcher access is stored separately from config.json",
 		"Runtime Profile",
+		"Gateway Runtime",
+		"nookclaw gateway",
 		"Next Steps",
 		"Quick Start",
 		"nookclaw status",
@@ -100,6 +104,43 @@ func TestBuildOnboardingMessage_IncludesMigrationAndCredentialSections(t *testin
 		"Credentials",
 		"OpenAI API key",
 		"local network on port 18800",
+	} {
+		if !strings.Contains(msg, snippet) {
+			t.Fatalf("expected onboarding message to contain %q\nmessage:\n%s", snippet, msg)
+		}
+	}
+}
+
+func TestBuildOnboardingMessage_GatewayServiceEnabled(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Channels.Telegram.Enabled = true
+	cfg.Channels.Telegram.Token = "telegram-token"
+	cfg.Channels.Telegram.AllowFrom = config.FlexibleStringSlice{"123456789"}
+
+	msg := buildOnboardingMessage(
+		cfg,
+		"/tmp/nookclaw/config.json",
+		"/tmp/nookclaw/launcher-config.json",
+		false,
+		onboardingState{
+			SetupMode:        advancedMode,
+			LauncherConfig:   launcherconfig.Default(),
+			GatewayAutostart: true,
+			GatewayService: gatewayServiceSetup{
+				UnitPath:   "/tmp/systemd/user/nookclaw-gateway.service",
+				Enabled:    true,
+				LingerHint: "To start before login, run: sudo loginctl enable-linger shayea",
+			},
+		},
+	)
+
+	for _, snippet := range []string{
+		"Gateway Runtime",
+		"systemd user service",
+		"/tmp/systemd/user/nookclaw-gateway.service",
+		"enabled and started",
+		"systemctl --user status nookclaw-gateway",
+		"sudo loginctl enable-linger shayea",
 	} {
 		if !strings.Contains(msg, snippet) {
 			t.Fatalf("expected onboarding message to contain %q\nmessage:\n%s", snippet, msg)

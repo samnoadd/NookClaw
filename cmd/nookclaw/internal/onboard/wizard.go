@@ -28,6 +28,7 @@ type onboardOptions struct {
 	Advanced          bool
 	Force             bool
 	LauncherPublic    bool
+	GatewayAutostart  bool
 	Provider          string
 	APIKey            string
 	Channel           string
@@ -35,6 +36,7 @@ type onboardOptions struct {
 	ChannelAppToken   string
 	ChannelUserID     string
 	ChannelHomeserver string
+	ChannelAllowFrom  string
 }
 
 type onboardingState struct {
@@ -43,6 +45,8 @@ type onboardingState struct {
 	LauncherConfig    launcherconfig.Config
 	CredentialHint    string
 	ConfiguredChannel string
+	GatewayAutostart  bool
+	GatewayService    gatewayServiceSetup
 }
 
 type wizardOption struct {
@@ -125,7 +129,8 @@ var channelPresets = []channelPreset{
 		Guidance: []string{
 			"Open Telegram and message @BotFather.",
 			"Run /newbot, follow the prompts, then copy the bot token it returns.",
-			"Paste the token below. After onboarding, lock the bot down with allowlists in config.json if needed.",
+			"Paste the token below, then add optional allow_from entries such as 123456789, telegram:123456789, or @username.",
+			"Leave allow_from blank only if you want the bot reachable by any Telegram account that can find it.",
 		},
 	},
 	{
@@ -279,6 +284,12 @@ func validateOnboardOptions(opts onboardOptions) error {
 	if opts.ChannelHomeserver != "" && channel != "matrix" {
 		return fmt.Errorf("--channel-homeserver requires --channel matrix")
 	}
+	if opts.ChannelAllowFrom != "" && channel != "telegram" {
+		return fmt.Errorf("--channel-allow-from currently requires --channel telegram")
+	}
+	if opts.GatewayAutostart && !gatewayUserServiceSupported() {
+		return fmt.Errorf("--gateway-autostart currently requires Linux with systemd user services")
+	}
 
 	if opts.NonInteractive {
 		switch channel {
@@ -311,6 +322,8 @@ func (o onboardOptions) preferAdvanced() bool {
 		o.ChannelAppToken != "" ||
 		o.ChannelUserID != "" ||
 		o.ChannelHomeserver != "" ||
+		o.ChannelAllowFrom != "" ||
+		o.GatewayAutostart ||
 		o.LauncherPublic
 }
 
@@ -477,6 +490,14 @@ func (w *setupWizard) run(cfg *config.Config) (onboardingState, error) {
 		return onboardingState{}, err
 	}
 	state.ConfiguredChannel = channelLabel
+	if channelLabel != "none" {
+		w.printSection(
+			"Gateway runtime",
+			"Inbound channels only receive messages while `nookclaw gateway` is running.",
+		)
+		state.GatewayAutostart = w.configureGatewayRuntime()
+		fmt.Fprintln(w.out)
+	}
 
 	w.printSection(
 		"Launcher access",
@@ -506,6 +527,7 @@ func (w *setupWizard) applyFlagSelections(cfg *config.Config, state *onboardingS
 	if channelLabel != "" {
 		state.ConfiguredChannel = channelLabel
 	}
+	state.GatewayAutostart = w.opts.GatewayAutostart
 
 	return nil
 }
@@ -648,8 +670,16 @@ func (w *setupWizard) configureSelectedChannel(cfg *config.Config, channelID str
 		if strings.TrimSpace(token) == "" {
 			return "", fmt.Errorf("telegram channel requires a bot token")
 		}
+		allowFromInput := strings.TrimSpace(w.opts.ChannelAllowFrom)
+		if allowFromInput == "" && w.interactive {
+			allowFromInput = w.promptText(
+				"Telegram allow_from entries (comma separated, optional)",
+				strings.Join(cfg.Channels.Telegram.AllowFrom, ","),
+			)
+		}
 		cfg.Channels.Telegram.Enabled = true
 		cfg.Channels.Telegram.Token = token
+		cfg.Channels.Telegram.AllowFrom = flexibleStringSliceFromCSV(allowFromInput)
 		return "Telegram", nil
 	case "discord":
 		token := strings.TrimSpace(w.opts.ChannelSecret)
@@ -791,6 +821,19 @@ func (w *setupWizard) configureSelectedChannel(cfg *config.Config, channelID str
 	default:
 		return "", fmt.Errorf("unsupported channel %q", channelID)
 	}
+}
+
+func (w *setupWizard) configureGatewayRuntime() bool {
+	if !gatewayUserServiceSupported() {
+		fmt.Fprint(w.out, renderCallout("Gateway runtime", []string{
+			"Inbound channels only work while `nookclaw gateway` is running.",
+			"Automatic startup during onboarding is currently available only on Linux systems with systemd user services.",
+		}))
+		fmt.Fprintln(w.out)
+		return false
+	}
+
+	return w.promptYesNo("Install a systemd user service so the gateway starts automatically on login?", false)
 }
 
 func (w *setupWizard) configureLauncher(current launcherconfig.Config) launcherconfig.Config {
@@ -1633,4 +1676,12 @@ func parseCommaSeparatedList(value string) []string {
 		}
 	}
 	return result
+}
+
+func flexibleStringSliceFromCSV(value string) config.FlexibleStringSlice {
+	entries := parseCommaSeparatedList(value)
+	if len(entries) == 0 {
+		return nil
+	}
+	return config.FlexibleStringSlice(entries)
 }

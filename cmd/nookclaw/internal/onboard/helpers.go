@@ -42,6 +42,9 @@ func onboard(opts onboardOptions) error {
 	if err := launcherconfig.Save(launcherPath, state.LauncherConfig); err != nil {
 		return fmt.Errorf("saving launcher config: %w", err)
 	}
+	if state.GatewayAutostart {
+		state.GatewayService = installGatewayUserService(configPath)
+	}
 
 	fmt.Print(buildOnboardingMessage(cfg, configPath, launcherPath, updated, state))
 	return nil
@@ -92,6 +95,36 @@ func buildOnboardingMessage(
 	fmt.Fprintf(&b, "  Heartbeat:      %s\n", statusLabel(cfg.Heartbeat.Enabled))
 	fmt.Fprintf(&b, "  Remote exec:    %s\n", statusLabel(cfg.Tools.Exec.AllowRemote))
 
+	if hasInboundChannels(cfg) || state.GatewayAutostart {
+		fmt.Fprintln(&b)
+		b.WriteString(renderSummarySection("Gateway Runtime"))
+		if state.GatewayAutostart {
+			if state.GatewayService.Enabled {
+				fmt.Fprintln(&b, "  Mode:           systemd user service")
+				fmt.Fprintf(&b, "  Unit:           %s\n", state.GatewayService.UnitPath)
+				fmt.Fprintln(&b, "  Status:         enabled and started")
+				if state.GatewayService.LingerHint != "" {
+					fmt.Fprintf(&b, "  Boot note:      %s\n", state.GatewayService.LingerHint)
+				}
+			} else {
+				fmt.Fprintln(&b, "  Mode:           systemd user service requested")
+				if state.GatewayService.UnitPath != "" {
+					fmt.Fprintf(&b, "  Unit:           %s\n", state.GatewayService.UnitPath)
+				}
+				if state.GatewayService.Error != "" {
+					fmt.Fprintf(&b, "  Status:         %s\n", state.GatewayService.Error)
+				}
+				if state.GatewayService.LingerHint != "" {
+					fmt.Fprintf(&b, "  Boot note:      %s\n", state.GatewayService.LingerHint)
+				}
+			}
+		} else {
+			fmt.Fprintln(&b, "  Mode:           manual")
+			fmt.Fprintln(&b, "  Command:        nookclaw gateway")
+			fmt.Fprintln(&b, "  Note:           Inbound channels only receive messages while the gateway is running.")
+		}
+	}
+
 	if len(safety) > 0 {
 		fmt.Fprintln(&b)
 		b.WriteString(renderSummarySection("Safety Notes"))
@@ -106,10 +139,27 @@ func buildOnboardingMessage(
 	fmt.Fprintln(&b, "     nookclaw status")
 	fmt.Fprintln(&b, "     nookclaw model")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "  2. Start a first chat")
+	nextStep := 2
+	if hasInboundChannels(cfg) || state.GatewayAutostart {
+		if state.GatewayAutostart && state.GatewayService.Enabled {
+			fmt.Fprintf(&b, "  %d. Verify the background gateway service\n", nextStep)
+			fmt.Fprintln(&b, "     systemctl --user status nookclaw-gateway")
+		} else if state.GatewayAutostart {
+			fmt.Fprintf(&b, "  %d. Finish enabling the background gateway service\n", nextStep)
+			fmt.Fprintln(&b, "     systemctl --user daemon-reload")
+			fmt.Fprintln(&b, "     systemctl --user enable --now nookclaw-gateway")
+		} else {
+			fmt.Fprintf(&b, "  %d. Start the gateway for inbound channels\n", nextStep)
+			fmt.Fprintln(&b, "     nookclaw gateway")
+		}
+		fmt.Fprintln(&b)
+		nextStep++
+	}
+	fmt.Fprintf(&b, "  %d. Start a first chat\n", nextStep)
 	fmt.Fprintln(&b, "     nookclaw agent -m \"hello\"")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "  3. Open the web launcher")
+	nextStep++
+	fmt.Fprintf(&b, "  %d. Open the web launcher\n", nextStep)
 	fmt.Fprintln(&b, "     make build-launcher && ./build/nookclaw-launcher")
 
 	if state.DetectedOpenClaw != "" {
@@ -140,10 +190,17 @@ func buildSafetyNotes(cfg *config.Config, state onboardingState) []string {
 	if enabledChannelsSummary(cfg) != "none enabled" {
 		notes = append(notes, "At least one inbound channel is enabled. Confirm the token scope and message allowlists before daily use.")
 	}
+	if cfg.Channels.Telegram.Enabled && len(cfg.Channels.Telegram.AllowFrom) == 0 {
+		notes = append(notes, "Telegram allow_from is empty. Add specific IDs or usernames if you do not want the bot reachable by any Telegram user.")
+	}
 	if cfg.Tools.Web.Enabled {
 		notes = append(notes, "Web tools are enabled. Prompts may cause outbound fetches or searches when the runtime decides they are useful.")
 	}
 	return notes
+}
+
+func hasInboundChannels(cfg *config.Config) bool {
+	return enabledChannelsSummary(cfg) != "none enabled"
 }
 
 func enabledChannelsSummary(cfg *config.Config) string {
