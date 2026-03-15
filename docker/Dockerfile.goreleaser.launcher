@@ -1,12 +1,13 @@
 FROM alpine:3.21
 
-ARG TARGETPLATFORM
+ARG TARGETOS
+ARG TARGETARCH
 
 RUN apk add --no-cache ca-certificates tzdata
 
-COPY $TARGETPLATFORM/nookclaw /usr/local/bin/nookclaw
-COPY $TARGETPLATFORM/nookclaw-launcher /usr/local/bin/nookclaw-launcher
-COPY $TARGETPLATFORM/nookclaw-launcher-tui /usr/local/bin/nookclaw-launcher-tui
+COPY ${TARGETOS}_${TARGETARCH}/nookclaw /usr/local/bin/nookclaw
+COPY ${TARGETOS}_${TARGETARCH}/nookclaw-launcher /usr/local/bin/nookclaw-launcher
+COPY ${TARGETOS}_${TARGETARCH}/nookclaw-launcher-tui /usr/local/bin/nookclaw-launcher-tui
 
 ENTRYPOINT ["nookclaw-launcher"]
 CMD ["-public", "-no-browser"]
