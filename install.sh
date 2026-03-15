@@ -133,12 +133,17 @@ resolve_version() {
     return
   fi
 
-  local api url json version
+  local api json version
   api="https://api.github.com/repos/${REPO}/releases/latest"
-  json="$(fetch_url "$api" | tr -d '\n')"
+  if ! json="$(fetch_url "$api" 2>/dev/null | tr -d '\n')"; then
+    printf 'Unable to resolve the latest release from %s\n' "$api" >&2
+    printf 'Publish a GitHub release first, or set NOOKCLAW_VERSION to an existing tag.\n' >&2
+    exit 1
+  fi
   version="$(printf '%s' "$json" | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p')"
   if [ -z "$version" ]; then
     printf 'Unable to resolve the latest release from %s\n' "$api" >&2
+    printf 'Publish a GitHub release first, or set NOOKCLAW_VERSION to an existing tag.\n' >&2
     exit 1
   fi
   printf '%s' "$version"
@@ -199,7 +204,10 @@ CHECKSUMS_PATH="${TMP_DIR}/checksums.txt"
 printf 'Installing NookClaw %s for %s/%s\n' "$VERSION" "$OS_NAME" "$ARCH_NAME"
 
 if ! download_file "${DOWNLOAD_BASE}/${ASSET_NAME}" "$ARCHIVE_PATH"; then
-  download_file "${DOWNLOAD_BASE}/${LEGACY_ASSET_NAME}" "${TMP_DIR}/${LEGACY_ASSET_NAME}"
+  if ! download_file "${DOWNLOAD_BASE}/${LEGACY_ASSET_NAME}" "${TMP_DIR}/${LEGACY_ASSET_NAME}"; then
+    printf 'No release archive found for %s/%s in %s\n' "$OS_NAME" "$ARCH_NAME" "$VERSION" >&2
+    exit 1
+  fi
   ARCHIVE_PATH="${TMP_DIR}/${LEGACY_ASSET_NAME}"
   ASSET_NAME="${LEGACY_ASSET_NAME}"
 fi
