@@ -5,9 +5,9 @@ ARG TARGETARCH
 
 RUN apk add --no-cache ca-certificates tzdata
 
-COPY ${TARGETOS}_${TARGETARCH}/nookclaw /usr/local/bin/nookclaw
-COPY ${TARGETOS}_${TARGETARCH}/nookclaw-launcher /usr/local/bin/nookclaw-launcher
-COPY ${TARGETOS}_${TARGETARCH}/nookclaw-launcher-tui /usr/local/bin/nookclaw-launcher-tui
+COPY ${TARGETOS}/${TARGETARCH}/NookClaw /usr/local/bin/nookclaw
+COPY ${TARGETOS}/${TARGETARCH}/nookclaw-launcher /usr/local/bin/nookclaw-launcher
+COPY ${TARGETOS}/${TARGETARCH}/nookclaw-launcher-tui /usr/local/bin/nookclaw-launcher-tui
 
 ENTRYPOINT ["nookclaw-launcher"]
 CMD ["-public", "-no-browser"]
