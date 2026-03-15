@@ -1,0 +1,73 @@
+name: Release Smoke
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Tag to use for the smoke build"
+        required: true
+        type: string
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Ensure local release tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}" >/dev/null; then
+            git checkout "${RELEASE_TAG}"
+          else
+            git tag -a "${RELEASE_TAG}" -m "Release smoke ${RELEASE_TAG}" "${GITHUB_SHA}"
+            git checkout "${RELEASE_TAG}"
+          fi
+
+      - name: Setup Go from go.mod
+        id: setup-go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        run: corepack enable && corepack prepare pnpm@latest --activate
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Run GoReleaser smoke build
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: ~> v2
+          args: release --clean --skip=publish
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          GOVERSION: ${{ steps.setup-go.outputs.go-version }}
+          GORELEASER_CURRENT_TAG: ${{ inputs.tag }}
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+
+      - name: Run installer smoke test
+        run: ./scripts/smoke-install-release.sh dist "${{ inputs.tag }}"

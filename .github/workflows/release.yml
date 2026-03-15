@@ -27,12 +27,11 @@ on:
         default: false
 
 jobs:
-  release:
-    name: GoReleaser Release
+  meta:
+    name: Resolve Release Metadata
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      packages: write
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
     steps:
       - name: Resolve release tag
         id: meta
@@ -47,6 +46,24 @@ jobs:
             echo "tag=$REF_NAME" >> "$GITHUB_OUTPUT"
           fi
 
+  verify-release:
+    name: Verify Release Artifacts
+    needs: meta
+    uses: ./.github/workflows/release-smoke.yml
+    with:
+      tag: ${{ needs.meta.outputs.tag }}
+    secrets: inherit
+
+  release:
+    name: GoReleaser Release
+    needs:
+      - meta
+      - verify-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
       - name: Checkout source
         uses: actions/checkout@v6
         with:
@@ -56,7 +73,7 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' }}
         shell: bash
         env:
-          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+          RELEASE_TAG: ${{ needs.meta.outputs.tag }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -101,7 +118,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
           GOVERSION: ${{ steps.setup-go.outputs.go-version }}
-          GORELEASER_CURRENT_TAG: ${{ steps.meta.outputs.tag }}
+          GORELEASER_CURRENT_TAG: ${{ needs.meta.outputs.tag }}
           MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
           MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
           MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
@@ -114,15 +131,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release edit "${{ steps.meta.outputs.tag }}" \
+          gh release edit "${{ needs.meta.outputs.tag }}" \
             --draft=${{ inputs.draft }} \
             --prerelease=${{ inputs.prerelease }}
 
   upload-tos:
     name: Upload to TOS
-    needs: release
+    needs:
+      - meta
+      - release
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.upload_tos }}
     uses: ./.github/workflows/upload-tos.yml
     with:
-      tag: ${{ inputs.tag }}
+      tag: ${{ needs.meta.outputs.tag }}
     secrets: inherit

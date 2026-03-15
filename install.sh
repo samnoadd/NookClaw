@@ -5,6 +5,9 @@ set -euo pipefail
 REPO="${NOOKCLAW_REPO:-samnoadd/NookClaw}"
 INSTALL_DIR="${NOOKCLAW_INSTALL_DIR:-$HOME/.local/bin}"
 VERSION="${NOOKCLAW_VERSION:-}"
+DOWNLOAD_BASE_OVERRIDE="${NOOKCLAW_DOWNLOAD_BASE:-}"
+TARGET_OS_OVERRIDE="${NOOKCLAW_OS:-}"
+TARGET_ARCH_OVERRIDE="${NOOKCLAW_ARCH:-}"
 
 usage() {
   cat <<'EOF'
@@ -17,6 +20,9 @@ Environment:
   NOOKCLAW_VERSION      Release tag to install. Defaults to the latest release.
   NOOKCLAW_INSTALL_DIR  Destination directory for the nookclaw binary.
   NOOKCLAW_REPO         GitHub repository in owner/name form.
+  NOOKCLAW_DOWNLOAD_BASE  Override release asset base URL. Intended for CI smoke tests.
+  NOOKCLAW_OS           Override detected OS. Intended for CI smoke tests.
+  NOOKCLAW_ARCH         Override detected architecture. Intended for CI smoke tests.
 EOF
 }
 
@@ -74,6 +80,11 @@ download_file() {
 }
 
 detect_os() {
+  if [ -n "$TARGET_OS_OVERRIDE" ]; then
+    printf '%s' "$TARGET_OS_OVERRIDE"
+    return
+  fi
+
   case "$(uname -s)" in
     Linux)
       printf 'Linux'
@@ -95,6 +106,11 @@ detect_os() {
 }
 
 detect_arch() {
+  if [ -n "$TARGET_ARCH_OVERRIDE" ]; then
+    printf '%s' "$TARGET_ARCH_OVERRIDE"
+    return
+  fi
+
   case "$(uname -m)" in
     x86_64|amd64)
       printf 'x86_64'
@@ -131,6 +147,11 @@ resolve_version() {
   if [ -n "$VERSION" ]; then
     printf '%s' "$VERSION"
     return
+  fi
+
+  if [ -n "$DOWNLOAD_BASE_OVERRIDE" ]; then
+    printf 'NOOKCLAW_VERSION is required when NOOKCLAW_DOWNLOAD_BASE is set.\n' >&2
+    exit 1
   fi
 
   local api json version
@@ -227,6 +248,7 @@ ARCHIVE_PATH="${TMP_DIR}/${ASSET_NAME}"
 CHECKSUMS_NAME="$(resolve_checksums_name)"
 LEGACY_CHECKSUMS_NAME="$(resolve_legacy_checksums_name)"
 CHECKSUMS_PATH="${TMP_DIR}/${CHECKSUMS_NAME}"
+DOWNLOAD_BASE="${DOWNLOAD_BASE_OVERRIDE:-https://github.com/${REPO}/releases/download/${VERSION}}"
 
 printf 'Installing NookClaw %s for %s/%s\n' "$VERSION" "$OS_NAME" "$ARCH_NAME"
 

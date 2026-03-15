@@ -63,3 +63,9 @@ jobs:
 
       - name: Run go test
         run: go test ./...
+
+  release-smoke:
+    name: Release Smoke
+    uses: ./.github/workflows/release-smoke.yml
+    with:
+      tag: v0.0.0-pr
