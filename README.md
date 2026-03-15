@@ -29,13 +29,17 @@ NookClaw is usable today, but it is still early-stage software. Review the gener
 
 ## Quick Start
 
-Install from the latest GitHub release:
+Install from the latest public GitHub release:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/samnoadd/NookClaw/main/install.sh | bash
 ```
 
-Pin a specific release or install to a custom directory:
+This path requires the repository and release assets to be publicly reachable,
+and it only works after you have published a GitHub release.
+If you are testing a private fork or unreleased `main` changes, build from source instead.
+
+Pin a specific public release or install to a custom directory:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/samnoadd/NookClaw/main/install.sh | NOOKCLAW_VERSION=v0.1.0 bash
@@ -47,6 +51,7 @@ Build from source instead:
 ```bash
 git clone https://github.com/samnoadd/NookClaw.git
 cd NookClaw
+# requires Go 1.25.7+
 make deps
 make install
 ```

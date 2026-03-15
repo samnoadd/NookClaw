@@ -24,15 +24,18 @@ NookClaw defines a local-first personal profile for this fork.
 
 ## Build
 
-For general users, install from releases:
+For general users, install from public releases:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/samnoadd/NookClaw/main/install.sh | bash
 ```
 
-For source builds, install Go and then run:
+This path only works when the repository and release assets are publicly reachable,
+and after a GitHub release has been published.
+For a private fork or unreleased branch, install Go and build from source instead:
 
 ```bash
+make deps
 make install
 ```
 
