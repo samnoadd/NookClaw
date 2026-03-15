@@ -28,7 +28,7 @@ jobs:
           if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}" >/dev/null; then
             git checkout "${RELEASE_TAG}"
           else
-            git tag -a "${RELEASE_TAG}" -m "Release smoke ${RELEASE_TAG}" "${GITHUB_SHA}"
+            git tag "${RELEASE_TAG}" "${GITHUB_SHA}"
             git checkout "${RELEASE_TAG}"
           fi
 
